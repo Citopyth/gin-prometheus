@@ -249,45 +249,116 @@ private fun DeviceCard(
 }
 
 // ---------------------------------------------------------------------------
-// Log
+// Log: Ereignisse und Kopplungsliste
 // ---------------------------------------------------------------------------
+
+private const val DAY_MS = 24 * 60 * 60 * 1000L
 
 @Composable
 fun LogScreen(modifier: Modifier) {
+    var showPairings by rememberSaveable { mutableStateOf(false) }
+    Column(modifier.fillMaxSize()) {
+        Row(
+            Modifier.padding(start = 12.dp, end = 12.dp, top = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            FilterChip(selected = !showPairings, onClick = { showPairings = false }, label = { Text("Ereignisse") })
+            FilterChip(selected = showPairings, onClick = { showPairings = true }, label = { Text("Kopplungsliste") })
+        }
+        if (showPairings) PairingList() else EventList()
+    }
+}
+
+@Composable
+private fun EventList() {
     val context = LocalContext.current
     val state by DeviceStore.state.collectAsState()
+    var onlySuspicious by rememberSaveable { mutableStateOf(false) }
     var confirmClear by remember { mutableStateOf(false) }
+    var selected by remember { mutableStateOf<LogEvent?>(null) }
+    val now = System.currentTimeMillis()
+    val suspicious24h = state.events.count { it.suspicious && now - it.time < DAY_MS }
+    val shown = if (onlySuspicious) state.events.filter { it.suspicious } else state.events
 
     LazyColumn(
-        modifier.fillMaxSize(),
+        Modifier.fillMaxSize(),
         contentPadding = PaddingValues(12.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         item {
+            Card(
+                Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = if (suspicious24h > 0) Color(0xFF450A0A) else MaterialTheme.colorScheme.surfaceVariant,
+                ),
+            ) {
+                Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        if (suspicious24h > 0) "\u26A0\uFE0F $suspicious24h verdächtige Ereignisse in 24 h"
+                        else "\u2705 Keine verdächtigen Ereignisse in 24 h",
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                    Text(
+                        "Verdächtig sind: unbekannte oder blockierte Geräte, Verbindungen bei gesperrtem Handy, " +
+                            "auffällig häufige Verbindungen, neue Kopplungen und abgebrochene Kopplungsversuche. " +
+                            "Tippe auf ein Ereignis, um zu handeln.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+            }
+        }
+        item {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("${state.events.size} Ereignisse", modifier = Modifier.weight(1f))
+                Switch(checked = onlySuspicious, onCheckedChange = { onlySuspicious = it })
+                Spacer(Modifier.width(8.dp))
+                Text("Nur verdächtige", modifier = Modifier.weight(1f))
                 if (state.events.isNotEmpty()) TextButton(onClick = { confirmClear = true }) { Text("Log leeren") }
             }
         }
-        items(state.events) { e ->
-            val color = when (e.kind) {
-                EventKind.BLOCKED_CONNECTED -> Red
-                EventKind.CONNECTED -> if (state.devices[e.address]?.trust == Trust.TRUSTED) Green else Amber
+        if (shown.isEmpty()) {
+            item { Text(if (onlySuspicious) "Nichts Verdächtiges gefunden." else "Noch keine Ereignisse.") }
+        }
+        items(shown) { e ->
+            val trust = state.devices[e.address]?.trust
+            val color = when {
+                e.suspicious -> Red
+                e.kind == EventKind.CONNECTED && trust == Trust.TRUSTED -> Green
+                e.kind == EventKind.CONNECTED || e.kind == EventKind.PAIRING_ATTEMPT -> Amber
                 else -> MaterialTheme.colorScheme.onSurface
             }
-            Column {
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .clickable { selected = e }
+                    .padding(vertical = 4.dp),
+            ) {
                 Text(fmt(e.time), style = MaterialTheme.typography.labelSmall)
-                Text("${e.name ?: "Unbekannt"} · ${e.address}", style = MaterialTheme.typography.bodyMedium)
+                Text(
+                    (if (e.suspicious) "\u26A0\uFE0F " else "") + "${e.name ?: "Unbekannt"} \u00B7 ${e.address}",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
                 Text(e.kind.label, color = color, style = MaterialTheme.typography.bodySmall)
+                e.note?.let { Text(it, color = color, style = MaterialTheme.typography.bodySmall) }
             }
         }
+    }
+
+    selected?.let { e ->
+        val rec = state.devices[e.address]
+        DeviceActionsDialog(
+            address = e.address,
+            label = rec?.label ?: e.name ?: "Unbekanntes Gerät",
+            trust = rec?.trust ?: Trust.UNKNOWN,
+            bonded = e.address in state.bonds,
+            onDismiss = { selected = null },
+        )
     }
 
     if (confirmClear) {
         AlertDialog(
             onDismissRequest = { confirmClear = false },
             title = { Text("Log leeren?") },
-            text = { Text("Die Geräteliste bleibt erhalten, nur die Ereignisse werden gelöscht.") },
+            text = { Text("Geräte- und Kopplungsliste bleiben erhalten, nur die Ereignisse werden gelöscht.") },
             confirmButton = {
                 TextButton(onClick = {
                     DeviceStore.clearLog(context)
@@ -296,6 +367,168 @@ fun LogScreen(modifier: Modifier) {
             },
             dismissButton = { TextButton(onClick = { confirmClear = false }) { Text("Abbrechen") } },
         )
+    }
+}
+
+@Composable
+private fun DeviceActionsDialog(address: String, label: String, trust: Trust, bonded: Boolean, onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(label) },
+        text = {
+            Text(
+                "$address\nStatus: " + when (trust) {
+                    Trust.TRUSTED -> "vertraut"
+                    Trust.BLOCKED -> "blockiert"
+                    Trust.UNKNOWN -> "unbekannt"
+                } + if (bonded) "\nMit deinem Handy gekoppelt" else "\nNicht gekoppelt",
+            )
+        },
+        confirmButton = {
+            Column(horizontalAlignment = Alignment.End) {
+                if (trust != Trust.TRUSTED) {
+                    TextButton(onClick = {
+                        DeviceStore.setTrust(context, address, Trust.TRUSTED)
+                        onDismiss()
+                    }) { Text("Vertrauen") }
+                }
+                if (trust != Trust.BLOCKED) {
+                    TextButton(onClick = {
+                        DeviceStore.setTrust(context, address, Trust.BLOCKED)
+                        onDismiss()
+                    }) { Text("Blockieren") }
+                }
+                if (bonded) {
+                    TextButton(onClick = {
+                        unpair(context, address, label)
+                        onDismiss()
+                    }) { Text("Entkoppeln", color = Red) }
+                }
+                TextButton(onClick = onDismiss) { Text("Schließen") }
+            }
+        },
+    )
+}
+
+/** Unpairs directly where Android allows it, otherwise opens the Bluetooth settings. */
+private fun unpair(context: Context, address: String, label: String) {
+    if (Bt.tryUnpair(context, address)) {
+        toast(context, "\u201e$label\u201c wird entkoppelt.")
+        thread { Guard.checkBonds(context.applicationContext) }
+    } else {
+        toast(
+            context,
+            "Android erlaubt das Entkoppeln nur in den Einstellungen: Zahnrad neben \u201e$label\u201c \u2192 Entkoppeln.",
+        )
+        Bt.openBluetoothSettings(context)
+    }
+}
+
+@Composable
+private fun PairingList() {
+    val context = LocalContext.current
+    val state by DeviceStore.state.collectAsState()
+    LaunchedEffect(Unit) { thread { Guard.checkBonds(context.applicationContext) } }
+    val bonded = state.bonds.entries
+        .map { (address, since) -> Triple(address, since, state.devices[address]) }
+        .sortedWith(
+            compareBy<Triple<String, Long, DeviceRecord?>> {
+                when (it.third?.trust) {
+                    Trust.BLOCKED -> 0
+                    Trust.TRUSTED -> 2
+                    else -> 1
+                }
+            }.thenByDescending { it.second },
+        )
+    val untrusted = bonded.filter { it.third?.trust != Trust.TRUSTED }
+
+    LazyColumn(
+        Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(12.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        item {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("${bonded.size} gekoppelte Geräte", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    "Das ist die Liste, die Android selbst führt. Nur Geräte darauf dürfen sich ohne Nachfrage " +
+                        "mit deinem Handy verbinden. Neue Einträge meldet die App als \u201eNeue Kopplung\u201c.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = {
+                        thread { Guard.checkBonds(context.applicationContext) }
+                        toast(context, "Kopplungsliste wird mit Android abgeglichen.")
+                    }) { Text("Neu prüfen") }
+                    if (untrusted.isNotEmpty()) {
+                        Button(onClick = {
+                            val failed = untrusted.filterNot { Bt.tryUnpair(context, it.first) }
+                            if (failed.isEmpty()) {
+                                toast(context, "${untrusted.size} unbekannte Geräte werden entkoppelt.")
+                            } else {
+                                toast(
+                                    context,
+                                    "Bitte in den Einstellungen entkoppeln: " +
+                                        failed.joinToString { it.third?.label ?: it.first },
+                                )
+                                Bt.openBluetoothSettings(context)
+                            }
+                            thread { Guard.checkBonds(context.applicationContext) }
+                        }) { Text("Alle ${untrusted.size} unbekannten entkoppeln") }
+                    }
+                }
+            }
+        }
+        if (!Bt.canConnect(context)) {
+            item { Text("Berechtigung \u201eGeräte in der Nähe\u201c fehlt, die Liste kann nicht gelesen werden.", color = Red) }
+        }
+        items(bonded, key = { it.first }) { (address, since, rec) ->
+            val trust = rec?.trust ?: Trust.UNKNOWN
+            Card(
+                Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = when (trust) {
+                        Trust.BLOCKED -> Color(0xFF450A0A)
+                        Trust.UNKNOWN -> Color(0xFF3B2A06)
+                        Trust.TRUSTED -> MaterialTheme.colorScheme.surfaceVariant
+                    },
+                ),
+            ) {
+                Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            "${trustIcon(trust)} ${rec?.label ?: "Unbekanntes Gerät"}",
+                            style = MaterialTheme.typography.titleMedium,
+                            modifier = Modifier.weight(1f),
+                        )
+                        if (rec?.connected == true) Text("\u25CF verbunden", color = Green, style = MaterialTheme.typography.labelMedium)
+                    }
+                    Text(address, style = MaterialTheme.typography.bodySmall)
+                    rec?.vendor?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+                    Text("In der Liste seit: ${fmt(since)}", style = MaterialTheme.typography.bodySmall)
+                    Text(
+                        "Zuletzt verbunden: ${if ((rec?.connectCount ?: 0) > 0) fmt(rec!!.lastSeen) else "noch nie gesehen"} " +
+                            "\u00B7 ${rec?.connectCount ?: 0} Verbindungen",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    if (trust == Trust.BLOCKED) {
+                        Text("Blockiert, aber noch gekoppelt: unbedingt entkoppeln!", color = Red, style = MaterialTheme.typography.bodySmall)
+                    }
+                    Row(Modifier.horizontalScroll(rememberScrollState())) {
+                        if (trust != Trust.TRUSTED) {
+                            TextButton(onClick = { DeviceStore.setTrust(context, address, Trust.TRUSTED) }) { Text("Vertrauen") }
+                        }
+                        if (trust != Trust.BLOCKED) {
+                            TextButton(onClick = { DeviceStore.setTrust(context, address, Trust.BLOCKED) }) { Text("Blockieren") }
+                        }
+                        TextButton(onClick = { unpair(context, address, rec?.label ?: address) }) {
+                            Text("Entkoppeln", color = Red)
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 

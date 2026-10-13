@@ -18,6 +18,10 @@ enum class EventKind(val label: String) {
     BLOCKED("blockiert"),
     UNBLOCKED("Blockierung aufgehoben"),
     REMOVED("entfernt"),
+    PAIRED("neu gekoppelt"),
+    UNPAIRED("Kopplung entfernt"),
+    PAIRING_ATTEMPT("Kopplungsversuch"),
+    PAIRING_FAILED("Kopplung abgebrochen oder abgelehnt"),
 }
 
 data class DeviceRecord(
@@ -39,11 +43,15 @@ data class LogEvent(
     val address: String,
     val name: String?,
     val kind: EventKind,
+    val note: String? = null,
+    val suspicious: Boolean = false,
 )
 
 data class StoreState(
     val devices: Map<String, DeviceRecord> = emptyMap(),
     val events: List<LogEvent> = emptyList(), // newest first
+    /** Bonded devices as last seen in Android, with the time each bond was first noticed. */
+    val bonds: Map<String, Long> = emptyMap(),
 )
 
 /**
@@ -82,7 +90,13 @@ object DeviceStore {
         copy(events = (listOf(e) + events).take(MAX_EVENTS))
 
     /** Records a connection and returns the updated device. */
-    fun recordConnect(context: Context, address: String, name: String?): DeviceRecord {
+    fun recordConnect(
+        context: Context,
+        address: String,
+        name: String?,
+        note: String? = null,
+        suspicious: Boolean = false,
+    ): DeviceRecord {
         val now = System.currentTimeMillis()
         val s = update(context) { s ->
             val old = s.devices[address]
@@ -94,7 +108,7 @@ object DeviceStore {
             )
             val kind = if (rec.trust == Trust.BLOCKED) EventKind.BLOCKED_CONNECTED else EventKind.CONNECTED
             s.copy(devices = s.devices + (address to rec))
-                .withEvent(LogEvent(now, address, rec.name, kind))
+                .withEvent(LogEvent(now, address, rec.name, kind, note, suspicious))
         }
         return s.devices.getValue(address)
     }
@@ -156,6 +170,63 @@ object DeviceStore {
         }
     }
 
+    /** Logs an event that does not change the device record (e.g. a pairing attempt). */
+    fun logEvent(
+        context: Context,
+        address: String,
+        name: String?,
+        kind: EventKind,
+        note: String? = null,
+        suspicious: Boolean = false,
+    ) {
+        update(context) { s ->
+            s.withEvent(
+                LogEvent(System.currentTimeMillis(), address, name ?: s.devices[address]?.name, kind, note, suspicious),
+            )
+        }
+    }
+
+    /**
+     * Compares Android's current bond list with the last snapshot, logs new
+     * and removed pairings and returns the newly paired devices that are not
+     * trusted. With [baseline] the snapshot is only recorded, without events.
+     * The diff runs under the store lock, so concurrent callers never log a
+     * pairing twice.
+     */
+    fun syncBonds(context: Context, current: List<Pair<String, String?>>, baseline: Boolean): List<DeviceRecord> {
+        val now = System.currentTimeMillis()
+        val newUntrusted = mutableListOf<DeviceRecord>()
+        update(context) { s ->
+            val currentSet = current.map { it.first }.toSet()
+            if (baseline) {
+                return@update s.copy(bonds = currentSet.associateWith { s.bonds[it] ?: now })
+            }
+            val added = current.filter { it.first !in s.bonds }
+            val removed = s.bonds.keys - currentSet
+            if (added.isEmpty() && removed.isEmpty()) return@update s
+
+            var next = s
+            added.forEach { (address, name) ->
+                val rec = (next.devices[address] ?: DeviceRecord(address = address, firstSeen = now, lastSeen = now))
+                    .copy(name = name ?: next.devices[address]?.name)
+                val trusted = rec.trust == Trust.TRUSTED
+                if (!trusted) newUntrusted += rec
+                next = next.copy(devices = next.devices + (address to rec)).withEvent(
+                    LogEvent(
+                        now, address, rec.name, EventKind.PAIRED,
+                        note = if (trusted) null else "Neue Kopplung. Warst du das?",
+                        suspicious = !trusted,
+                    ),
+                )
+            }
+            removed.forEach { address ->
+                next = next.withEvent(LogEvent(now, address, next.devices[address]?.name, EventKind.UNPAIRED))
+            }
+            next.copy(bonds = (next.bonds - removed) + added.associate { it.first to now })
+        }
+        return newUntrusted
+    }
+
     fun clearLog(context: Context) {
         update(context) { it.copy(events = emptyList()) }
     }
@@ -165,6 +236,7 @@ object DeviceStore {
         val root = JSONObject(f.readText())
         val devices = root.optJSONArray("devices") ?: JSONArray()
         val events = root.optJSONArray("events") ?: JSONArray()
+        val bonds = root.optJSONObject("bonds") ?: JSONObject()
         return StoreState(
             devices = (0 until devices.length()).map { devices.getJSONObject(it) }.associate { o ->
                 val address = o.getString("address")
@@ -183,8 +255,12 @@ object DeviceStore {
             events = (0 until events.length()).mapNotNull { i ->
                 val o = events.getJSONObject(i)
                 val kind = runCatching { EventKind.valueOf(o.optString("kind")) }.getOrNull() ?: return@mapNotNull null
-                LogEvent(o.optLong("time"), o.getString("address"), o.optStringOrNull("name"), kind)
+                LogEvent(
+                    o.optLong("time"), o.getString("address"), o.optStringOrNull("name"), kind,
+                    o.optStringOrNull("note"), o.optBoolean("suspicious"),
+                )
             },
+            bonds = bonds.keys().asSequence().associateWith { bonds.optLong(it) },
         )
     }
 
@@ -212,9 +288,12 @@ object DeviceStore {
                     put("address", e.address)
                     put("name", e.name ?: JSONObject.NULL)
                     put("kind", e.kind.name)
+                    put("note", e.note ?: JSONObject.NULL)
+                    put("suspicious", e.suspicious)
                 })
             }
         })
+        root.put("bonds", JSONObject().apply { s.bonds.forEach { (address, since) -> put(address, since) } })
         // Write to a temp file first so a crash never leaves a half-written store.
         val tmp = File(f.parentFile, f.name + ".tmp")
         tmp.writeText(root.toString())

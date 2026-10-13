@@ -25,9 +25,8 @@ class AclReceiver : BroadcastReceiver() {
 
         when (intent.action) {
             BluetoothDevice.ACTION_ACL_CONNECTED -> {
-                val rec = DeviceStore.recordConnect(context, address, name)
-                Alarm.onConnected(context, rec, DeviceStore.state.value.devices.values)
-                if (!rec.vendorChecked) {
+                Guard.onAclConnected(context, address, name)
+                if (DeviceStore.state.value.devices[address]?.vendorChecked == false) {
                     val pending = goAsync()
                     thread {
                         try {
@@ -38,8 +37,29 @@ class AclReceiver : BroadcastReceiver() {
                     }
                 }
             }
-            BluetoothDevice.ACTION_ACL_DISCONNECTED -> DeviceStore.recordDisconnect(context, address, name)
+            BluetoothDevice.ACTION_ACL_DISCONNECTED -> {
+                DeviceStore.recordDisconnect(context, address, name)
+                Guard.checkBonds(context)
+            }
         }
+    }
+}
+
+/**
+ * Pairing attempts. BOND_STATE_CHANGED is not exempt from the Android 8
+ * background limits, so this receiver is registered at runtime by [BtGuardApp]
+ * and only hears attempts while the app process is alive. Completed pairings
+ * are still caught later by [Guard.checkBonds].
+ */
+class BondReceiver : BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: Intent) {
+        if (intent.action != BluetoothDevice.ACTION_BOND_STATE_CHANGED) return
+        val device = intent.bluetoothDevice() ?: return
+        Guard.onBondStateChanged(
+            context, device,
+            intent.getIntExtra(BluetoothDevice.EXTRA_BOND_STATE, BluetoothDevice.ERROR),
+            intent.getIntExtra(BluetoothDevice.EXTRA_PREVIOUS_BOND_STATE, BluetoothDevice.ERROR),
+        )
     }
 }
 

@@ -15,4 +15,7 @@ object Prefs {
 
     fun bondedImported(context: Context) = prefs(context).getBoolean("bondedImported", false)
     fun setBondedImported(context: Context) = prefs(context).edit().putBoolean("bondedImported", true).apply()
+
+    fun bondBaseline(context: Context) = prefs(context).getBoolean("bondBaseline", false)
+    fun setBondBaseline(context: Context) = prefs(context).edit().putBoolean("bondBaseline", true).apply()
 }

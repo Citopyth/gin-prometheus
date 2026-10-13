@@ -51,12 +51,13 @@ object Alarm {
     }
 
     /** Called for every ACL connection. Trusted devices stay silent. */
-    fun onConnected(context: Context, rec: DeviceRecord, all: Collection<DeviceRecord>) {
+    fun onConnected(context: Context, rec: DeviceRecord, all: Collection<DeviceRecord>, note: String? = null) {
+        val extra = note?.let { "\n\u26A0\uFE0F $it" } ?: ""
         val twin = all.firstOrNull { it.trust == Trust.TRUSTED && MacUtil.likelySameDevice(it.address, rec.address) }
         when {
             rec.trust == Trust.TRUSTED -> return
             rec.trust == Trust.BLOCKED ->
-                notify(context, rec, siren = true, title = "🚨 Erwischt!", text = blockedLines.random().format(rec.label))
+                notify(context, rec, siren = true, title = "🚨 Erwischt!", text = blockedLines.random().format(rec.label) + extra)
             twin != null ->
                 notify(
                     context, rec, siren = false,
@@ -67,9 +68,32 @@ object Alarm {
                 notify(
                     context, rec, siren = Prefs.sirenEnabled(context),
                     title = "Unbekanntes Gerät verbunden",
-                    text = unknownLines.random().format(rec.label) + " (${rec.address})",
+                    text = unknownLines.random().format(rec.label) + " (${rec.address})" + extra,
                 )
         }
+    }
+
+    /** A device was paired that is not on the trusted list. */
+    fun onPaired(context: Context, rec: DeviceRecord) {
+        notify(
+            context, rec, siren = true,
+            title = "\uD83D\uDD17 Neue Kopplung: ${rec.label}",
+            text = "${rec.address} ist jetzt mit deinem Handy gekoppelt. Warst du das? " +
+                "Wenn nicht: Blockieren und in den Einstellungen entkoppeln.",
+        )
+    }
+
+    /** A pairing attempt by an untrusted device ended without a bond. */
+    fun onPairingFailed(context: Context, address: String, name: String?) {
+        val now = System.currentTimeMillis()
+        val rec = DeviceStore.state.value.devices[address]
+            ?: DeviceRecord(address = address, name = name, firstSeen = now, lastSeen = now)
+        notify(
+            context, rec, siren = false,
+            title = "Kopplungsversuch abgebrochen",
+            text = "${rec.label} (${rec.address}) wollte sich koppeln, die Kopplung kam aber nicht zustande. " +
+                "Hast du sie selbst abgebrochen, ist alles in Ordnung.",
+        )
     }
 
     fun test(context: Context) {

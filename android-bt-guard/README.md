@@ -9,13 +9,27 @@ prüft, die wirklich vor fremdem Zugriff schützen.
 | Bereich | Was es tut |
 |---|---|
 | **Geräte** | Name, Adresse, Hersteller (über maclookup.app), zuerst/zuletzt gesehen, Anzahl der Verbindungen. Vertrauen, Blockieren, Orten, Entfernen. Erkennt zweite Adressen bekannter Geräte (z. B. Soundcore: `F4:…` und `CB:…`). |
-| **Log** | Jedes Verbinden und Trennen mit Uhrzeit, auch wenn die App geschlossen ist. |
+| **Log → Ereignisse** | Jedes Verbinden, Trennen und Koppeln mit Uhrzeit, auch wenn die App geschlossen ist. Verdächtige Ereignisse sind markiert und begründet; Filter „Nur verdächtige“; Tippen öffnet Vertrauen/Blockieren/Entkoppeln. |
+| **Log → Kopplungsliste** | Alle Geräte, die Android als gekoppelt führt, mit „in der Liste seit“, letzter Verbindung und Status. Entkoppeln einzeln oder „Alle unbekannten entkoppeln“. |
 | **Radar** | Detektiv-Modus: Signalstärke als heiß/warm/kalt, um ein Gerät physisch zu finden. |
 | **Schutz** | Schutz-Check: gekoppelte Geräte, Sichtbarkeit, USB-/WLAN-Debugging, NFC, Sicherheitsupdate, Akku-Sparmodus. Mit Knopf direkt zur passenden Einstellung. |
 | **Spaß** | Tarnname für dein Handy, Köder-Signal unter dem Tarnnamen, Erwischt-Alarm mit Sirene und Sprüchen. |
 
 Beim ersten Start werden alle bereits gekoppelten Geräte als **vertraut**
 übernommen (wie eine Gästeliste).
+
+## Was als verdächtig gilt
+
+- ein unbekanntes oder blockiertes Gerät verbindet sich
+- ein nicht vertrautes Gerät verbindet sich, während das Handy gesperrt ist
+- ein nicht vertrautes Gerät verbindet sich 5-mal in 10 Minuten
+- eine neue Kopplung taucht auf, die nicht als vertraut markiert ist (Alarm: „Warst du das?“)
+- ein Kopplungsversuch eines nicht vertrauten Geräts bricht ab
+
+Die Kopplungsliste wird bei jedem Öffnen der App und bei jeder Verbindung mit
+Android abgeglichen. So fallen auch Kopplungen auf, die passiert sind, während
+die App nicht lief. Abgebrochene Kopplungsversuche meldet Android nur, solange
+die App im Hintergrund lebt.
 
 ## Grenzen (von Android vorgegeben)
 

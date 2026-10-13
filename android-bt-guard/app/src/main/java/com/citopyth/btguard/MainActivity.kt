@@ -30,8 +30,6 @@ import kotlin.concurrent.thread
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        DeviceStore.init(this)
-        Alarm.ensureChannels(this)
         setContent {
             MaterialTheme(
                 colorScheme = darkColorScheme(
@@ -44,6 +42,12 @@ class MainActivity : ComponentActivity() {
                 App()
             }
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // Catches pairings made while the app was not running, e.g. in the system settings.
+        thread { Guard.checkBonds(applicationContext) }
     }
 }
 
@@ -115,5 +119,8 @@ private fun importBondedOnce(context: android.content.Context) {
     val bonded = Bt.bondedDevices(context)
     DeviceStore.importBonded(context, bonded)
     Prefs.setBondedImported(context)
-    thread { bonded.forEach { Vendor.lookupAndStore(context, it.first) } }
+    thread {
+        Guard.checkBonds(context)
+        bonded.forEach { Vendor.lookupAndStore(context, it.first) }
+    }
 }
