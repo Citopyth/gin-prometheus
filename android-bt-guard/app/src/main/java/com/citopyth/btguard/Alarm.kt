@@ -14,6 +14,7 @@ import androidx.core.app.NotificationCompat
 object Alarm {
     private const val CHANNEL_SIREN = "siren_v1"
     private const val CHANNEL_QUIET = "quiet_v1"
+    const val CHANNEL_WATCH = "watch_v1"
 
     private val blockedLines = listOf(
         "%s wollte sich wieder reinschleichen. Die Tür bleibt zu. 🚪",
@@ -47,7 +48,11 @@ object Alarm {
         val quiet = NotificationChannel(CHANNEL_QUIET, "Hinweise", NotificationManager.IMPORTANCE_DEFAULT).apply {
             description = "Hinweise ohne Sirene"
         }
-        nm.createNotificationChannels(listOf(siren, quiet))
+        val watch = NotificationChannel(CHANNEL_WATCH, "Wächter aktiv", NotificationManager.IMPORTANCE_LOW).apply {
+            description = "Dauerhafte Anzeige, solange der Wächter im Hintergrund läuft"
+            setShowBadge(false)
+        }
+        nm.createNotificationChannels(listOf(siren, quiet, watch))
     }
 
     /** Called for every ACL connection. Trusted devices stay silent. */
@@ -56,6 +61,14 @@ object Alarm {
         val twin = all.firstOrNull { it.trust == Trust.TRUSTED && MacUtil.likelySameDevice(it.address, rec.address) }
         when {
             rec.trust == Trust.TRUSTED -> return
+            rec.input ->
+                notify(
+                    context, rec, siren = true,
+                    title = "\u2328\uFE0F ALARM: Unbekanntes Eingabegerät!",
+                    text = "${rec.label} (${rec.address}) ist ${rec.kind ?: "eine Tastatur oder Maus"} und hat sich verbunden. " +
+                        "Solche Geräte können auf deinem Handy tippen. Kennst du es nicht: " +
+                        "sofort Bluetooth ausschalten und das Gerät entkoppeln.",
+                )
             rec.trust == Trust.BLOCKED ->
                 notify(context, rec, siren = true, title = "🚨 Erwischt!", text = blockedLines.random().format(rec.label) + extra)
             twin != null ->
@@ -75,10 +88,11 @@ object Alarm {
 
     /** A device was paired that is not on the trusted list. */
     fun onPaired(context: Context, rec: DeviceRecord) {
+        val inputWarning = if (rec.input) " ACHTUNG: Das ist ein Eingabegerät, es kann dein Handy steuern!" else ""
         notify(
             context, rec, siren = true,
-            title = "\uD83D\uDD17 Neue Kopplung: ${rec.label}",
-            text = "${rec.address} ist jetzt mit deinem Handy gekoppelt. Warst du das? " +
+            title = (if (rec.input) "\u2328\uFE0F " else "\uD83D\uDD17 ") + "Neue Kopplung: ${rec.label}",
+            text = "${rec.address} ist jetzt mit deinem Handy gekoppelt. Warst du das?$inputWarning " +
                 "Wenn nicht: Blockieren und in den Einstellungen entkoppeln.",
         )
     }

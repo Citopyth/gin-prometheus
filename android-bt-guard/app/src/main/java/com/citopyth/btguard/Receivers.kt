@@ -25,7 +25,7 @@ class AclReceiver : BroadcastReceiver() {
 
         when (intent.action) {
             BluetoothDevice.ACTION_ACL_CONNECTED -> {
-                Guard.onAclConnected(context, address, name)
+                Guard.onAclConnected(context, address, name, Bt.describe(context, device))
                 if (DeviceStore.state.value.devices[address]?.vendorChecked == false) {
                     val pending = goAsync()
                     thread {

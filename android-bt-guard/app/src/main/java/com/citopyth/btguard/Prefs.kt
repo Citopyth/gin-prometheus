@@ -16,6 +16,13 @@ object Prefs {
     fun bondedImported(context: Context) = prefs(context).getBoolean("bondedImported", false)
     fun setBondedImported(context: Context) = prefs(context).edit().putBoolean("bondedImported", true).apply()
 
+    fun lastBootTime(context: Context) = prefs(context).getLong("lastBootTime", 0L)
+    fun setLastBootTime(context: Context, time: Long) = prefs(context).edit().putLong("lastBootTime", time).apply()
+
+    /** "Wächter dauerhaft aktiv": keep the foreground service running. On by default. */
+    fun watchEnabled(context: Context) = prefs(context).getBoolean("watchEnabled", true)
+    fun setWatchEnabled(context: Context, on: Boolean) = prefs(context).edit().putBoolean("watchEnabled", on).apply()
+
     fun bondBaseline(context: Context) = prefs(context).getBoolean("bondBaseline", false)
     fun setBondBaseline(context: Context) = prefs(context).edit().putBoolean("bondBaseline", true).apply()
 }

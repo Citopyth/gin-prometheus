@@ -34,6 +34,10 @@ data class DeviceRecord(
     val connectCount: Int = 0,
     val connected: Boolean = false,
     val trust: Trust = Trust.UNKNOWN,
+    /** Human-readable device type, e.g. "Audio" or "Tastatur". */
+    val kind: String? = null,
+    /** Keyboard, mouse or other HID device: it can control the phone. */
+    val input: Boolean = false,
 ) {
     val label: String get() = name ?: vendor ?: "Unbekanntes Gerät"
 }
@@ -96,6 +100,7 @@ object DeviceStore {
         name: String?,
         note: String? = null,
         suspicious: Boolean = false,
+        kind: DeviceKind? = null,
     ): DeviceRecord {
         val now = System.currentTimeMillis()
         val s = update(context) { s ->
@@ -105,6 +110,8 @@ object DeviceStore {
                 lastSeen = now,
                 connectCount = (old?.connectCount ?: 0) + 1,
                 connected = true,
+                kind = kind?.label ?: old?.kind,
+                input = kind?.input ?: old?.input ?: false,
             )
             val kind = if (rec.trust == Trust.BLOCKED) EventKind.BLOCKED_CONNECTED else EventKind.CONNECTED
             s.copy(devices = s.devices + (address to rec))
@@ -227,6 +234,34 @@ object DeviceStore {
         return newUntrusted
     }
 
+    /** Stores device types for known devices; unknown addresses are ignored. */
+    fun updateKinds(context: Context, kinds: Map<String, DeviceKind>) {
+        update(context) { s ->
+            val changed = kinds.mapNotNull { (address, k) ->
+                val old = s.devices[address] ?: return@mapNotNull null
+                if (old.kind == k.label && old.input == k.input) null
+                else address to old.copy(kind = k.label, input = k.input)
+            }
+            if (changed.isEmpty()) s else s.copy(devices = s.devices + changed)
+        }
+    }
+
+    /** After a reboot no link survives, so stale "verbunden" flags are cleared. */
+    fun markAllDisconnected(context: Context) {
+        update(context) { s ->
+            if (s.devices.values.none { it.connected }) s
+            else s.copy(devices = s.devices.mapValues { it.value.copy(connected = false) })
+        }
+    }
+
+    /** Marks devices Android reports as connected right now, without logging events. */
+    fun markConnected(context: Context, addresses: Set<String>) {
+        update(context) { s ->
+            val changed = addresses.mapNotNull { a -> s.devices[a]?.takeIf { !it.connected }?.let { a to it.copy(connected = true) } }
+            if (changed.isEmpty()) s else s.copy(devices = s.devices + changed)
+        }
+    }
+
     fun clearLog(context: Context) {
         update(context) { it.copy(events = emptyList()) }
     }
@@ -250,6 +285,8 @@ object DeviceStore {
                     connectCount = o.optInt("connectCount"),
                     connected = o.optBoolean("connected"),
                     trust = runCatching { Trust.valueOf(o.optString("trust")) }.getOrDefault(Trust.UNKNOWN),
+                    kind = o.optStringOrNull("kind"),
+                    input = o.optBoolean("input"),
                 )
             },
             events = (0 until events.length()).mapNotNull { i ->
@@ -278,6 +315,8 @@ object DeviceStore {
                     put("connectCount", d.connectCount)
                     put("connected", d.connected)
                     put("trust", d.trust.name)
+                    put("kind", d.kind ?: JSONObject.NULL)
+                    put("input", d.input)
                 })
             }
         })

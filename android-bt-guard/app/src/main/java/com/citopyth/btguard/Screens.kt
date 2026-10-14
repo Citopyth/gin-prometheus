@@ -228,6 +228,14 @@ private fun DeviceCard(
             }
             Text("${d.address} · ${MacUtil.kindLabel(d.address)}", style = MaterialTheme.typography.bodySmall)
             Text(vendorText, style = MaterialTheme.typography.bodySmall)
+            d.kind?.let { Text("Typ: $it", style = MaterialTheme.typography.bodySmall) }
+            if (d.input && d.trust != Trust.TRUSTED) {
+                Text(
+                    "\u2328\uFE0F Eingabegerät: kann dein Handy steuern!",
+                    color = Red,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
             Text("Zuerst gesehen: ${fmt(d.firstSeen)}", style = MaterialTheme.typography.bodySmall)
             Text("Zuletzt gesehen: ${fmt(d.lastSeen)}", style = MaterialTheme.typography.bodySmall)
             Text("Verbindungen: ${d.connectCount}", style = MaterialTheme.typography.bodySmall)
@@ -506,6 +514,13 @@ private fun PairingList() {
                     }
                     Text(address, style = MaterialTheme.typography.bodySmall)
                     rec?.vendor?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+                    if (rec?.kind != null) {
+                        Text(
+                            (if (rec.input) "\u2328\uFE0F " else "") + "Typ: ${rec.kind}",
+                            color = if (rec.input && trust != Trust.TRUSTED) Red else Color.Unspecified,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
                     Text("In der Liste seit: ${fmt(since)}", style = MaterialTheme.typography.bodySmall)
                     Text(
                         "Zuletzt verbunden: ${if ((rec?.connectCount ?: 0) > 0) fmt(rec!!.lastSeen) else "noch nie gesehen"} " +
@@ -649,7 +664,8 @@ fun DefenseScreen(modifier: Modifier, refresh: Int) {
     val context = LocalContext.current
     val store by DeviceStore.state.collectAsState()
     var tick by remember { mutableIntStateOf(0) }
-    val checks = remember(refresh, tick, store.devices) { Defense.run(context, store.devices) }
+    var watching by remember { mutableStateOf(Prefs.watchEnabled(context)) }
+    val checks = remember(refresh, tick, store.devices, watching) { Defense.run(context, store.devices) }
     val okCount = checks.count { it.ok }
 
     LazyColumn(
@@ -670,6 +686,29 @@ fun DefenseScreen(modifier: Modifier, refresh: Int) {
                     style = MaterialTheme.typography.bodySmall,
                 )
                 OutlinedButton(onClick = { tick++ }) { Text("Neu prüfen") }
+            }
+        }
+        item {
+            Card(Modifier.fillMaxWidth()) {
+                Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("\uD83D\uDEE1\uFE0F Wächter dauerhaft aktiv", style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            "Hält die Überwachung im Hintergrund am Laufen (kleine Dauer-Benachrichtigung) " +
+                                "und startet nach einem Neustart automatisch.",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                    Switch(checked = watching, onCheckedChange = { on ->
+                        Prefs.setWatchEnabled(context, on)
+                        watching = on
+                        if (on) {
+                            if (!WatchService.startIfEnabled(context)) toast(context, "Start nicht möglich: Berechtigungen fehlen.")
+                        } else {
+                            WatchService.stop(context)
+                        }
+                    })
+                }
             }
         }
         items(checks) { c ->

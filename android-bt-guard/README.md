@@ -20,6 +20,9 @@ Beim ersten Start werden alle bereits gekoppelten Geräte als **vertraut**
 
 ## Was als verdächtig gilt
 
+- **Alarmstufe Rot:** ein nicht vertrautes **Eingabegerät** (Tastatur, Maus,
+  Controller) verbindet oder koppelt sich. Solche Geräte können auf dem Handy
+  tippen; erkannt über die Bluetooth-Geräteklasse und den HID-Dienst
 - ein unbekanntes oder blockiertes Gerät verbindet sich
 - ein nicht vertrautes Gerät verbindet sich, während das Handy gesperrt ist
 - ein nicht vertrautes Gerät verbindet sich 5-mal in 10 Minuten
@@ -29,7 +32,12 @@ Beim ersten Start werden alle bereits gekoppelten Geräte als **vertraut**
 Die Kopplungsliste wird bei jedem Öffnen der App und bei jeder Verbindung mit
 Android abgeglichen. So fallen auch Kopplungen auf, die passiert sind, während
 die App nicht lief. Abgebrochene Kopplungsversuche meldet Android nur, solange
-die App im Hintergrund lebt.
+die App läuft. Dafür sorgt **„Wächter dauerhaft aktiv“** (Tab Schutz, standardmäßig
+an): ein Vordergrunddienst mit kleiner Dauer-Benachrichtigung, der nach einem
+Neustart und nach Updates automatisch wieder startet.
+
+Nach einem Neustart setzt die App den Status „verbunden“ aller Geräte zurück
+und liest die aktuell verbundenen Audio-Geräte neu ein.
 
 ## Grenzen (von Android vorgegeben)
 

@@ -72,12 +72,18 @@ private fun App() {
         ActivityResultContracts.RequestMultiplePermissions(),
     ) {
         importBondedOnce(context)
+        WatchService.startIfEnabled(context)
         refresh++
     }
 
     LaunchedEffect(Unit) {
         val missing = Bt.missingPermissions(context)
-        if (missing.isEmpty()) importBondedOnce(context) else permissionLauncher.launch(missing.toTypedArray())
+        if (missing.isEmpty()) {
+            importBondedOnce(context)
+            WatchService.startIfEnabled(context)
+        } else {
+            permissionLauncher.launch(missing.toTypedArray())
+        }
     }
 
     Scaffold(

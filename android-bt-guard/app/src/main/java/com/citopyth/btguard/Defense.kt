@@ -76,6 +76,37 @@ object Defense {
             ) { ctx -> Bt.openBluetoothSettings(ctx) },
         )
 
+        val inputs = devices.values.filter { it.input && it.address in bonded.map { b -> b.first } }
+        val untrustedInputs = inputs.filter { it.trust != Trust.TRUSTED }
+        add(
+            Check(
+                "Eingabegeräte (Tastatur, Maus)",
+                untrustedInputs.isEmpty(),
+                when {
+                    untrustedInputs.isNotEmpty() ->
+                        "Nicht vertraute Eingabegeräte sind gekoppelt: " + untrustedInputs.joinToString { it.label } +
+                            ". Sie könnten dein Handy steuern. Kennst du sie nicht: sofort entkoppeln!"
+                    inputs.isNotEmpty() -> "${inputs.size} gekoppelte Eingabegeräte, alle als vertraut markiert."
+                    else -> "Keine Tastatur oder Maus gekoppelt."
+                },
+                "Entkoppeln".takeIf { untrustedInputs.isNotEmpty() },
+            ) { ctx -> Bt.openBluetoothSettings(ctx) },
+        )
+
+        val watching = Prefs.watchEnabled(context)
+        add(
+            Check(
+                "Wächter dauerhaft aktiv",
+                watching,
+                if (watching) "Läuft im Hintergrund weiter und startet nach einem Neustart automatisch."
+                else "Aus. Kopplungsversuche werden nur erkannt, solange die App zufällig im Hintergrund läuft.",
+                "Einschalten".takeIf { !watching },
+            ) { ctx ->
+                Prefs.setWatchEnabled(ctx, true)
+                WatchService.startIfEnabled(ctx)
+            },
+        )
+
         val cr = context.contentResolver
         val adb = Settings.Global.getInt(cr, Settings.Global.ADB_ENABLED, 0) == 1
         add(
