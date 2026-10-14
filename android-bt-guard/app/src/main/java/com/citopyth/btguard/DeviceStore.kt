@@ -11,9 +11,9 @@ import java.io.File
 enum class Trust { UNKNOWN, TRUSTED, BLOCKED }
 
 enum class EventKind(val label: String) {
-    CONNECTED("verbunden"),
-    DISCONNECTED("getrennt"),
-    BLOCKED_CONNECTED("BLOCKIERTES Gerät verbunden"),
+    CONNECTED("mit deinem Handy verbunden"),
+    DISCONNECTED("von deinem Handy getrennt"),
+    BLOCKED_CONNECTED("BLOCKIERTES Gerät mit deinem Handy verbunden"),
     TRUSTED("als vertraut markiert"),
     BLOCKED("blockiert"),
     UNBLOCKED("Blockierung aufgehoben"),
@@ -49,7 +49,21 @@ data class LogEvent(
     val kind: EventKind,
     val note: String? = null,
     val suspicious: Boolean = false,
+    /** For disconnects: how long the link lasted, if its start was logged. */
+    val durationMs: Long? = null,
 )
+
+/** Links shorter than this are typically automatic scans (Quick Share, device search). */
+const val SHORT_CONTACT_MS = 10_000L
+
+fun formatDuration(ms: Long): String {
+    val s = ms / 1000
+    return when {
+        s < 60 -> "$s s"
+        s < 3600 -> "${s / 60} min ${s % 60} s"
+        else -> "${s / 3600} h ${(s % 3600) / 60} min"
+    }
+}
 
 data class StoreState(
     val devices: Map<String, DeviceRecord> = emptyMap(),
@@ -129,10 +143,25 @@ object DeviceStore {
                 lastSeen = now,
                 connected = false,
             )
+            // The newest connect/disconnect event of this device tells whether the
+            // link's start was logged; if so, the link lasted from then until now.
+            val start = s.events.firstOrNull {
+                it.address == address && it.kind in LINK_KINDS
+            }?.takeIf { it.kind != EventKind.DISCONNECTED }
+            val duration = start?.let { now - it.time }?.coerceAtLeast(0)
+            val note = duration?.let {
+                if (it < SHORT_CONTACT_MS) {
+                    "Kurzkontakt (${formatDuration(it)}): typisch für automatische Gerätesuche, z. B. Quick Share"
+                } else {
+                    "nach ${formatDuration(it)} getrennt"
+                }
+            }
             s.copy(devices = s.devices + (address to rec))
-                .withEvent(LogEvent(now, address, rec.name, EventKind.DISCONNECTED))
+                .withEvent(LogEvent(now, address, rec.name, EventKind.DISCONNECTED, note, durationMs = duration))
         }
     }
+
+    private val LINK_KINDS = setOf(EventKind.CONNECTED, EventKind.BLOCKED_CONNECTED, EventKind.DISCONNECTED)
 
     fun setTrust(context: Context, address: String, trust: Trust) {
         val now = System.currentTimeMillis()
@@ -295,6 +324,7 @@ object DeviceStore {
                 LogEvent(
                     o.optLong("time"), o.getString("address"), o.optStringOrNull("name"), kind,
                     o.optStringOrNull("note"), o.optBoolean("suspicious"),
+                    durationMs = if (o.has("durationMs") && !o.isNull("durationMs")) o.optLong("durationMs") else null,
                 )
             },
             bonds = bonds.keys().asSequence().associateWith { bonds.optLong(it) },
@@ -329,6 +359,7 @@ object DeviceStore {
                     put("kind", e.kind.name)
                     put("note", e.note ?: JSONObject.NULL)
                     put("suspicious", e.suspicious)
+                    put("durationMs", e.durationMs ?: JSONObject.NULL)
                 })
             }
         })

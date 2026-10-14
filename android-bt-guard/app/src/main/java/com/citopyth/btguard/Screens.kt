@@ -328,8 +328,10 @@ private fun EventList() {
         }
         items(shown) { e ->
             val trust = state.devices[e.address]?.trust
+            val shortContact = e.durationMs != null && e.durationMs < SHORT_CONTACT_MS
             val color = when {
                 e.suspicious -> Red
+                shortContact -> MaterialTheme.colorScheme.primary
                 e.kind == EventKind.CONNECTED && trust == Trust.TRUSTED -> Green
                 e.kind == EventKind.CONNECTED || e.kind == EventKind.PAIRING_ATTEMPT -> Amber
                 else -> MaterialTheme.colorScheme.onSurface
@@ -345,7 +347,11 @@ private fun EventList() {
                     (if (e.suspicious) "\u26A0\uFE0F " else "") + "${e.name ?: "Unbekannt"} \u00B7 ${e.address}",
                     style = MaterialTheme.typography.bodyMedium,
                 )
-                Text(e.kind.label, color = color, style = MaterialTheme.typography.bodySmall)
+                Text(
+                    (if (shortContact) "\u26A1 " else "") + e.kind.label,
+                    color = color,
+                    style = MaterialTheme.typography.bodySmall,
+                )
                 e.note?.let { Text(it, color = color, style = MaterialTheme.typography.bodySmall) }
             }
         }

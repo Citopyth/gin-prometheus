@@ -80,7 +80,7 @@ object Alarm {
             else ->
                 notify(
                     context, rec, siren = Prefs.sirenEnabled(context),
-                    title = "Unbekanntes Gerät verbunden",
+                    title = "Unbekanntes Gerät mit deinem Handy verbunden",
                     text = unknownLines.random().format(rec.label) + " (${rec.address})" + extra,
                 )
         }

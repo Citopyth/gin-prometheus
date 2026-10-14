@@ -9,7 +9,7 @@ prüft, die wirklich vor fremdem Zugriff schützen.
 | Bereich | Was es tut |
 |---|---|
 | **Geräte** | Name, Adresse, Hersteller (über maclookup.app), zuerst/zuletzt gesehen, Anzahl der Verbindungen. Vertrauen, Blockieren, Orten, Entfernen. Erkennt zweite Adressen bekannter Geräte (z. B. Soundcore: `F4:…` und `CB:…`). |
-| **Log → Ereignisse** | Jedes Verbinden, Trennen und Koppeln mit Uhrzeit, auch wenn die App geschlossen ist. Verdächtige Ereignisse sind markiert und begründet; Filter „Nur verdächtige“; Tippen öffnet Vertrauen/Blockieren/Entkoppeln. |
+| **Log → Ereignisse** | Jedes Verbinden mit deinem Handy, Trennen (mit Dauer der Verbindung) und Koppeln mit Uhrzeit, auch wenn die App geschlossen ist. Verbindungen unter 10 Sekunden sind als ⚡ „Kurzkontakt“ markiert, typisch für automatische Gerätesuche wie Quick Share. Verdächtige Ereignisse sind markiert und begründet; Filter „Nur verdächtige“; Tippen öffnet Vertrauen/Blockieren/Entkoppeln. |
 | **Log → Kopplungsliste** | Alle Geräte, die Android als gekoppelt führt, mit „in der Liste seit“, letzter Verbindung und Status. Entkoppeln einzeln oder „Alle unbekannten entkoppeln“. |
 | **Radar** | Detektiv-Modus: Signalstärke als heiß/warm/kalt, um ein Gerät physisch zu finden. |
 | **Schutz** | Schutz-Check: gekoppelte Geräte, Sichtbarkeit, USB-/WLAN-Debugging, NFC, Sicherheitsupdate, Akku-Sparmodus. Mit Knopf direkt zur passenden Einstellung. |
