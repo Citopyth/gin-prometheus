@@ -13,7 +13,9 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  # Needed to publish the APK as a release asset, which is the only download route
+  # that works without a GitHub login and without unpacking a zip.
+  contents: write
 
 jobs:
   build:
@@ -80,6 +82,48 @@ jobs:
             exit 1
           fi
           echo "OK: no network permission in the packaged APK"
+
+      # Actions artifacts need a logged-in GitHub session and arrive as a zip, which is
+      # awkward on a phone. A release asset is a plain, direct .apk link instead. One
+      # rolling tag, so the link stays the same across rebuilds.
+      - name: Publish the APK as a rolling release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG=boom2local-latest
+          {
+            echo "Automatischer Build aus Commit \`${GITHUB_SHA}\`."
+            echo
+            echo "**Download:** \`boom2-local.apk\` unten unter *Assets*."
+            echo "Auf dem Handy oeffnen und die Installation aus unbekannter Quelle bestaetigen."
+            echo
+            echo "Die Boom 2 muss vorher in den Android-Bluetooth-Einstellungen gekoppelt sein -"
+            echo "die App sucht selbst nicht, damit sie ohne Standort-Berechtigung auskommt."
+            echo
+            echo "### Was dieser Build kann und was nicht"
+            echo
+            echo "- Die App hat **keine Netzwerk-Berechtigung**. Der Build-Schritt"
+            echo "  *Show the permissions the APK actually requests* liest das aus diesem"
+            echo "  APK zurueck und bricht ab, falls doch eine drinstuende."
+            echo "- Das Steuerprotokoll der Boom 2 ist **unbestaetigt**: Anker dokumentiert"
+            echo "  nichts, die Byte-Offsets stammen aus Mitschnitten verwandter Geraete."
+            echo "  Verbinden und Status lesen sollten gehen; ob jeder Wert stimmt, ist offen."
+            echo "  Jeder ungepruefte Wert ist in der App als *unbestaetigt* markiert, und der"
+            echo "  Nur-Lesen-Modus ist absichtlich voreingestellt. Details in PROTOCOL.md."
+            echo "- Signiert mit einem Debug-Schluessel, der zwischen den CI-Laeufen erhalten"
+            echo "  bleibt: ein neuerer Build installiert sich als Update darueber."
+          } > release-notes.md
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" \
+              --notes-file release-notes.md --prerelease
+          else
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" \
+              --title "Boom2 Local - Entwicklungsstand" \
+              --notes-file release-notes.md --prerelease --target "$GITHUB_SHA"
+          fi
+          gh release upload "$TAG" boom2-local.apk --repo "$GITHUB_REPOSITORY" --clobber
+          echo "Direkter Download:"
+          echo "https://github.com/$GITHUB_REPOSITORY/releases/download/$TAG/boom2-local.apk"
 
       - uses: actions/upload-artifact@v4
         with:

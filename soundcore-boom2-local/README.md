@@ -74,10 +74,18 @@ und in beiden Faellen siehst du im Reiter **Protokoll** die rohen Bytes. Der Weg
 
 Gebaut wird in GitHub Actions, du brauchst also nichts zu installieren:
 
-1. [Letzten Lauf von "Boom2Local APK" oeffnen](https://github.com/Citopyth/gin-prometheus/actions/workflows/boom2local.yml)
-2. Unter *Artifacts* `boom2-local-apk` herunterladen und entpacken
-3. `boom2-local.apk` auf dem Handy oeffnen und die Installation aus unbekannter
-   Quelle bestaetigen
+**[boom2-local.apk direkt herunterladen](https://github.com/Citopyth/gin-prometheus/releases/download/boom2local-latest/boom2-local.apk)**
+
+Das ist ein Release-Asset: kein GitHub-Login, kein ZIP, auf dem Handy ein Tipp. Der
+Link bleibt ueber alle kuenftigen Builds gleich, weil der Workflow immer denselben Tag
+`boom2local-latest` aktualisiert. Danach die Datei oeffnen und die Installation aus
+unbekannter Quelle bestaetigen.
+
+Alternativ, falls du eine bestimmte aeltere Fassung brauchst: jeder
+[Workflow-Lauf](https://github.com/Citopyth/gin-prometheus/actions/workflows/boom2local.yml)
+haengt dasselbe APK unten als Artefakt `boom2-local-apk` an. Dieser Weg verlangt
+allerdings einen GitHub-Login im Browser und liefert ein ZIP, selbst bei einem
+oeffentlichen Repo.
 
 Das APK ist mit einem Schluessel signiert, der zwischen den CI-Laeufen erhalten bleibt.
 Ein neuer Build installiert sich deshalb als Update ueber den alten, ohne dass du die
