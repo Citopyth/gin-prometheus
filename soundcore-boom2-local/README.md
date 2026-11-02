@@ -22,6 +22,7 @@ Der Build bricht ab, wenn sich das je aendert:
 | `verifyDependencyAllowlist` | nur AndroidX und Kotlin landen im Runtime-Classpath — kein Firebase, kein Analytics, kein HTTP-Client |
 | `verifyNoNetworkImports` | der eigene Code importiert kein `java.net`, `okhttp3`, `retrofit2`, `com.google.firebase`, … |
 | `verifyProtocolCoreIsPure` | der Protokoll-Kern bleibt frei von Android-APIs und damit testbar |
+| CI-Schritt *Show the permissions...* | liest die Berechtigungen mit `aapt2` aus dem **fertig gepackten APK** und bricht ab, wenn eine Netzwerk-Berechtigung darin steht |
 
 Die ersten drei haengen an `preBuild` bzw. `assemble`, du kannst also kein APK bauen, das
 die Pruefungen uebersprungen hat. Die App zeigt dieselbe Pruefung zur Laufzeit im
@@ -69,7 +70,27 @@ Realistische Erwartung beim ersten Start: die Verbindung klappt oder sie klappt 
 und in beiden Faellen siehst du im Reiter **Protokoll** die rohen Bytes. Der Weg von
 "klappt nicht" zu "klappt" steht unten.
 
-## Bauen
+## Fertiges APK herunterladen
+
+Gebaut wird in GitHub Actions, du brauchst also nichts zu installieren:
+
+1. [Letzten Lauf von "Boom2Local APK" oeffnen](https://github.com/Citopyth/gin-prometheus/actions/workflows/boom2local.yml)
+2. Unter *Artifacts* `boom2-local-apk` herunterladen und entpacken
+3. `boom2-local.apk` auf dem Handy oeffnen und die Installation aus unbekannter
+   Quelle bestaetigen
+
+Das APK ist mit einem Schluessel signiert, der zwischen den CI-Laeufen erhalten bleibt.
+Ein neuer Build installiert sich deshalb als Update ueber den alten, ohne dass du die
+App vorher entfernen musst.
+
+Die Berechtigungsliste des gebauten APK steht im Build-Log, Schritt *Show the
+permissions the APK actually requests* — dort kannst du nachlesen, dass im fertigen
+Paket wirklich nur die drei Bluetooth-Berechtigungen stehen. Eine vierte, die Android
+selbst ergaenzt, ist `de.privat.boom2local.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION`:
+die legt AndroidX an, um app-eigene Broadcast-Empfaenger gegen Zugriff von aussen zu
+schuetzen. Sie gilt nur innerhalb dieser App und hat nichts mit Netzwerk zu tun.
+
+## Selbst bauen
 
 Voraussetzung: Android Studio (Ladybug oder neuer) oder ein Android SDK mit
 `compileSdk 35`. Dann:
@@ -89,12 +110,13 @@ cd soundcore-boom2-local/protocol-verify
 ./gradlew test                        # 84 Tests
 ```
 
-> Hinweis zur Entstehung: der Protokoll-Kern wurde in der Umgebung, in der diese App
-> geschrieben wurde, tatsaechlich kompiliert und getestet (84 Tests, grün). Die
-> Android-Schicht **nicht** — dort war `dl.google.com` per Netzwerk-Policy gesperrt, also
-> gab es kein Android SDK und kein AGP. Dein erster `./gradlew :app:assembleDebug` ist
-> damit der erste echte Compile dieser Schicht. Wenn dabei etwas klemmt, ist es
-> erwartungsgemaess eine Kleinigkeit in der Compose-Oberflaeche, nicht in der Logik.
+> Hinweis zur Entstehung: in der Umgebung, in der diese App geschrieben wurde, ist
+> `dl.google.com` per Netzwerk-Policy gesperrt. Damit waren Android SDK, AGP und
+> AndroidX dort unerreichbar, und nur der Protokoll-Kern liess sich lokal bauen und
+> testen. Die Android-Schicht wird deshalb in GitHub Actions kompiliert - dort steht
+> das SDK bereit. Der Workflow `.github/workflows/boom2local.yml` ist also nicht nur
+> die Bequemlichkeit, aus der das APK faellt, sondern die Stelle, an der diese Schicht
+> ueberhaupt zum ersten Mal einen Compiler gesehen hat. Beides ist gruen.
 
 ## Protokoll kartografieren
 

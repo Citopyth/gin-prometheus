@@ -53,14 +53,19 @@ jobs:
             -alias androiddebugkey -dname "CN=Boom2Local Debug,O=Android,C=US" \
             -keyalg RSA -keysize 2048 -validity 10000
 
-      # assembleDebug depends on the manifest and import guards; assembleRelease adds
-      # the merged-manifest check under R8, which is where a dependency would be most
-      # likely to smuggle a permission in.
+      # assembleDebug produces the installable APK and runs the manifest and import
+      # guards on the way. assembleRelease is built as well, not to ship it, but
+      # because it is the only thing that exercises R8: the release build shrinks and
+      # obfuscates, and kotlinx.serialization's generated serializers are reached
+      # reflectively, so a wrong proguard rule only ever shows up here.
       - name: Build APK
         run: |
           chmod +x gradlew
           BOOM2_DEBUG_KEYSTORE="$HOME/boom2local-debug.keystore" \
-            ./gradlew --no-daemon :app:assembleDebug :app:verifyDependencyAllowlist
+            ./gradlew --no-daemon \
+              :app:assembleDebug \
+              :app:assembleRelease \
+              :app:verifyDependencyAllowlist
           cp app/build/outputs/apk/debug/app-debug.apk boom2-local.apk
 
       # Proof, in the build log, that the shipped APK cannot reach the network.
