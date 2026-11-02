@@ -1,0 +1,83 @@
+name: Boom2Local APK
+
+# The app is built here because the Android SDK is not reachable from the
+# development container: maven.google.com redirects to dl.google.com, which the
+# environment's network policy denies. GitHub's runners have the SDK, so this is
+# also the first place the Android layer is genuinely compiled.
+
+on:
+  push:
+    paths:
+      - "soundcore-boom2-local/**"
+      - ".github/workflows/boom2local.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: soundcore-boom2-local
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      # The protocol core is plain Kotlin, so it is tested without the Android SDK.
+      # It runs first: if the framing or the policy is broken, the APK is pointless.
+      - name: Protocol core tests
+        working-directory: soundcore-boom2-local/protocol-verify
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon check
+
+      # One signing key for all builds, so a new APK installs as an update instead of
+      # having to uninstall the old one (which would also drop its settings).
+      - uses: actions/cache@v4
+        with:
+          path: ~/boom2local-debug.keystore
+          key: boom2local-debug-keystore-v1
+
+      - name: Create signing key on first run
+        run: |
+          [ -f ~/boom2local-debug.keystore ] || keytool -genkeypair -noprompt \
+            -keystore ~/boom2local-debug.keystore -storepass android -keypass android \
+            -alias androiddebugkey -dname "CN=Boom2Local Debug,O=Android,C=US" \
+            -keyalg RSA -keysize 2048 -validity 10000
+
+      # assembleDebug depends on the manifest and import guards; assembleRelease adds
+      # the merged-manifest check under R8, which is where a dependency would be most
+      # likely to smuggle a permission in.
+      - name: Build APK
+        run: |
+          chmod +x gradlew
+          BOOM2_DEBUG_KEYSTORE="$HOME/boom2local-debug.keystore" \
+            ./gradlew --no-daemon :app:assembleDebug :app:verifyDependencyAllowlist
+          cp app/build/outputs/apk/debug/app-debug.apk boom2-local.apk
+
+      # Proof, in the build log, that the shipped APK cannot reach the network.
+      - name: Show the permissions the APK actually requests
+        run: |
+          AAPT=$(ls -d "$ANDROID_HOME"/build-tools/*/aapt2 | sort -V | tail -1)
+          echo "--- uses-permission entries in boom2-local.apk ---"
+          "$AAPT" dump permissions boom2-local.apk | sed -n '/permission/p'
+          echo "--- checking for network permissions ---"
+          if "$AAPT" dump permissions boom2-local.apk | grep -qE "android\.permission\.(INTERNET|ACCESS_NETWORK_STATE)"; then
+            echo "FAIL: the APK requests network access"
+            exit 1
+          fi
+          echo "OK: no network permission in the packaged APK"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: boom2-local-apk
+          path: soundcore-boom2-local/boom2-local.apk
+          if-no-files-found: error
