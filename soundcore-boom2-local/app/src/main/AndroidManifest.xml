@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!--
+      What is NOT in here is the whole point of this app.
+
+      There is no android.permission.INTERNET. On Android that is not a setting but a
+      kernel level fact: the INTERNET permission maps to a supplementary group id, and a
+      process without it cannot open a network socket at all. No code path, no library and
+      no mistake of mine can make this app send a byte to Anker or anyone else.
+
+      There is also no ACCESS_NETWORK_STATE, no location permission (the app only talks to
+      speakers you have already paired, so it never needs to scan), no microphone and no
+      contacts. The build fails if any of these ever appear: see app/build.gradle.kts.
+    -->
+
+    <!-- Android 12 and newer: talk to an already paired device. -->
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+
+    <!-- Android 11 and older used these two instead. -->
+    <uses-permission
+        android:name="android.permission.BLUETOOTH"
+        android:maxSdkVersion="30" />
+    <uses-permission
+        android:name="android.permission.BLUETOOTH_ADMIN"
+        android:maxSdkVersion="30" />
+
+    <uses-feature
+        android:name="android.hardware.bluetooth"
+        android:required="true" />
+
+    <application
+        android:allowBackup="false"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.Boom2Local">
+
+        <activity
+            android:name=".app.MainActivity"
+            android:exported="true"
+            android:label="@string/app_name">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+
+</manifest>
