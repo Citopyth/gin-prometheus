@@ -4,7 +4,10 @@
   "displayName": "Soundcore Boom 2",
   "model": "A3138 (unbestaetigt)",
   "match": {
-    "namePatterns": ["soundcore boom 2", "boom 2"],
+    "namePatterns": [
+      "soundcore boom 2",
+      "boom 2"
+    ],
     "requireBonded": true
   },
   "transport": {
@@ -17,6 +20,17 @@
     "insecureSocket": true,
     "connectTimeoutMs": 12000,
     "connectAttempts": 3
+  },
+  "ble": {
+    "enabled": true,
+    "serviceUuids": [],
+    "writeCharacteristicUuid": null,
+    "notifyCharacteristicUuid": null,
+    "blockedServiceUuids": [
+      "0000fe59-0000-1000-8000-00805f9b34fb",
+      "00001530-1212-efde-1523-785feabcd123"
+    ],
+    "requestMtu": 517
   },
   "framing": {
     "outboundHeader": "08 ee 00 00 00",
@@ -82,7 +96,16 @@
         "key": "customEq",
         "label": "EQ-Baender",
         "type": "EQ_BANDS",
-        "indices": [36, 39, 42, 45, 48, 51, 54, 57],
+        "indices": [
+          36,
+          39,
+          42,
+          45,
+          48,
+          51,
+          54,
+          57
+        ],
         "dbOffset": 120,
         "dbScale": 10.0,
         "verified": false,
@@ -136,8 +159,14 @@
           "max": 1,
           "default": 0,
           "choices": [
-            { "value": 0, "label": "aus" },
-            { "value": 1, "label": "an" }
+            {
+              "value": 0,
+              "label": "aus"
+            },
+            {
+              "value": 1,
+              "label": "an"
+            }
           ]
         }
       ],
@@ -169,10 +198,38 @@
       "kind": "WRITE",
       "payloadTemplate": "fe ?? ?? ?? ?? 0a",
       "arguments": [
-        { "key": "maskHigh", "label": "Maske hoch", "payloadIndex": 1, "min": 0, "max": 255, "default": 0 },
-        { "key": "maskLow", "label": "Maske tief", "payloadIndex": 2, "min": 0, "max": 255, "default": 0 },
-        { "key": "gain", "label": "Verstaerkung (roh)", "payloadIndex": 3, "min": 0, "max": 240, "default": 120 },
-        { "key": "band", "label": "Band", "payloadIndex": 4, "min": 0, "max": 255, "default": 0 }
+        {
+          "key": "maskHigh",
+          "label": "Maske hoch",
+          "payloadIndex": 1,
+          "min": 0,
+          "max": 255,
+          "default": 0
+        },
+        {
+          "key": "maskLow",
+          "label": "Maske tief",
+          "payloadIndex": 2,
+          "min": 0,
+          "max": 255,
+          "default": 0
+        },
+        {
+          "key": "gain",
+          "label": "Verstaerkung (roh)",
+          "payloadIndex": 3,
+          "min": 0,
+          "max": 240,
+          "default": 120
+        },
+        {
+          "key": "band",
+          "label": "Band",
+          "payloadIndex": 4,
+          "min": 0,
+          "max": 255,
+          "default": 0
+        }
       ],
       "verified": false,
       "note": "Form aus dem Boom-3i-Mitschnitt: fe <maske_hoch> <maske_tief> <gain> <band> 0a."
@@ -192,8 +249,14 @@
           "max": 1,
           "default": 0,
           "choices": [
-            { "value": 0, "label": "aus" },
-            { "value": 1, "label": "an" }
+            {
+              "value": 0,
+              "label": "aus"
+            },
+            {
+              "value": 1,
+              "label": "an"
+            }
           ]
         }
       ],
@@ -206,7 +269,14 @@
       "kind": "WRITE",
       "payloadTemplate": "??",
       "arguments": [
-        { "key": "value", "label": "Helligkeit", "payloadIndex": 0, "min": 0, "max": 255, "default": 128 }
+        {
+          "key": "value",
+          "label": "Helligkeit",
+          "payloadIndex": 0,
+          "min": 0,
+          "max": 255,
+          "default": 128
+        }
       ],
       "verified": false
     },
@@ -217,7 +287,14 @@
       "kind": "WRITE",
       "payloadTemplate": "??",
       "arguments": [
-        { "key": "value", "label": "Modus", "payloadIndex": 0, "min": 0, "max": 255, "default": 0 }
+        {
+          "key": "value",
+          "label": "Modus",
+          "payloadIndex": 0,
+          "min": 0,
+          "max": 255,
+          "default": 0
+        }
       ],
       "verified": false
     }
@@ -227,6 +304,7 @@
   "notes": [
     "Jeder Byte-Offset und jeder Befehlscode hier ist reverse-engineered und fuer die Boom 2 noch unbestaetigt. Quellen und Verifikationsstand stehen in PROTOCOL.md.",
     "blockedCommands ist leer, weil kein Firmware-/OTA-Befehl der Boom 2 bekannt ist. Das ist keine Luecke: alles, was nicht in commands steht, wird ohnehin nicht gesendet (Default-Deny). Sobald ein Mitschnitt einen OTA-Befehl zeigt, gehoert er hier hinein - dann ist er auch im Experten-Modus gesperrt.",
-    "handshake ist leer. Beim Space 2 verwirft das Geraet Schreibzugriffe bis zu einem Handshake. Falls die Boom 2 Schreibzugriffe ignoriert, zeigt ein Mitschnitt der Original-App die noetigen Schritte."
+    "handshake ist leer. Beim Space 2 verwirft das Geraet Schreibzugriffe bis zu einem Handshake. Falls die Boom 2 Schreibzugriffe ignoriert, zeigt ein Mitschnitt der Original-App die noetigen Schritte.",
+    "Der BLE-Pfad waehlt den Steuerdienst selbst: ein nicht-standardisierter GATT-Dienst mit je einer beschreibbaren und einer meldenden Eigenschaft. serviceUuids bleibt leer, bis ein Mitschnitt den richtigen Dienst zeigt - dann hier eintragen. blockedServiceUuids sperrt Nordic Secure DFU und das aeltere DFU-Profil, also die Dienste, ueber die Firmware uebertragen wird; die Liste ist nicht vollstaendig, und ein als Updater erkannter Dienst gehoert ebenfalls hinein."
   ]
 }

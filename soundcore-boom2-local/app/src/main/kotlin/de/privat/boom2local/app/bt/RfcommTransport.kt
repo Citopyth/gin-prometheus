@@ -26,71 +26,85 @@ import java.io.IOException
 import java.util.UUID
 
 /**
- * The one and only channel this app opens: a classic Bluetooth RFCOMM socket to the
- * speaker.
+ * Classic Bluetooth: an RFCOMM socket to the speaker.
  *
  * Everything that goes in or out passes through the audit log on its way, in raw hex, so
  * nothing the app does with your speaker is invisible to you.
  */
-class BluetoothLink(
+class RfcommTransport(
     private val profile: DeviceProfile,
     private val audit: AuditLog,
+    /** Service UUIDs to try, best first; see DeviceFinder.resolveServiceUuids. */
+    private val candidates: List<UuidCandidate>,
     private val clock: () -> Long = { System.currentTimeMillis() },
-) {
+) : ControlTransport {
+
+    /** A service UUID together with why it is being tried. */
+    class UuidCandidate(val uuid: UUID, val origin: String)
+
+    override val name: String get() = "RFCOMM (klassisch)"
 
     private val codec = profile.codec()
     private val splitter = FrameSplitter(codec)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     private val _frames = MutableSharedFlow<Frame>(replay = 0, extraBufferCapacity = 64)
-    val frames: SharedFlow<Frame> = _frames.asSharedFlow()
+    override val frames: SharedFlow<Frame> = _frames.asSharedFlow()
 
     @Volatile
     private var socket: BluetoothSocket? = null
 
     private var readJob: Job? = null
 
-    val isConnected: Boolean get() = socket?.isConnected == true
+    override val isConnected: Boolean get() = socket?.isConnected == true
 
     /**
-     * Opens the socket and returns the UUID that worked.
+     * Opens the socket and reports which service answered.
      *
      * Two reasons for the loop shape. The vendor UUID is only known for certain when the
-     * speaker advertises it, so the profile may offer several candidates and exactly one
-     * of them is right. And Soundcore devices accept one control client at a time, with
-     * the first attempt in a process reported to fail routinely. So each round tries
-     * every candidate once — the right UUID is found on the first round if the device is
+     * speaker advertises it, so there may be several candidates and exactly one of them
+     * is right. And Soundcore devices accept one control client at a time, with the first
+     * attempt in a process reported to fail routinely. So each round tries every
+     * candidate once — the right UUID is found on the first round if the device is
      * ready — and the rounds themselves are the retry.
      */
-    suspend fun connect(device: BluetoothDevice, candidates: List<UUID>): UUID =
+    override suspend fun connect(device: BluetoothDevice): TransportTarget =
         withContext(Dispatchers.IO) {
-            require(candidates.isNotEmpty()) { "keine Dienst-UUID zum Verbinden" }
+            if (candidates.isEmpty()) {
+                throw IOException(
+                    "Keine Dienst-UUID zum Verbinden. Die Box bietet keinen " +
+                        "herstellerspezifischen Dienst an - erst \"SDP neu abfragen\".",
+                )
+            }
             closeSocket()
             splitter.reset()
             val rounds = profile.transport.connectAttempts.coerceAtLeast(1)
             var lastMessage: String? = null
             for (round in 1..rounds) {
-                for (uuid in candidates) {
+                for (candidate in candidates) {
                     try {
                         val created = if (profile.transport.insecureSocket) {
-                            device.createInsecureRfcommSocketToServiceRecord(uuid)
+                            device.createInsecureRfcommSocketToServiceRecord(candidate.uuid)
                         } else {
-                            device.createRfcommSocketToServiceRecord(uuid)
+                            device.createRfcommSocketToServiceRecord(candidate.uuid)
                         }
                         created.connect()
                         socket = created
                         readJob = scope.launch { readLoop(created) }
                         audit.add(
                             AuditKind.INFO,
-                            "RFCOMM verbunden mit $uuid (Runde $round von $rounds)",
+                            "RFCOMM verbunden mit ${candidate.uuid} (Runde $round von $rounds)",
                             timestampMs = clock(),
                         )
-                        return@withContext uuid
+                        return@withContext TransportTarget(
+                            label = candidate.uuid.toString(),
+                            detail = "RFCOMM, ${candidate.origin}",
+                        )
                     } catch (e: Exception) {
                         lastMessage = e.message ?: e.javaClass.simpleName
                         audit.add(
                             AuditKind.ERROR,
-                            "Runde $round, $uuid: $lastMessage",
+                            "Runde $round, ${candidate.uuid}: $lastMessage",
                             timestampMs = clock(),
                         )
                     }
@@ -104,7 +118,7 @@ class BluetoothLink(
         }
 
     /** Encodes, logs and writes one frame. */
-    suspend fun send(command: Command, payload: ByteArray) {
+    override suspend fun send(command: Command, payload: ByteArray) {
         withContext(Dispatchers.IO) {
             val active = socket ?: throw IOException("nicht verbunden")
             val frame = codec.encode(command, payload)
@@ -170,14 +184,14 @@ class BluetoothLink(
         }
     }
 
-    fun close() {
+    override fun close() {
         readJob?.cancel()
         readJob = null
         closeSocket()
     }
 
     /** Call when the link is finished with for good; the read loop's scope dies with it. */
-    fun shutdown() {
+    override fun shutdown() {
         close()
         scope.cancel()
     }

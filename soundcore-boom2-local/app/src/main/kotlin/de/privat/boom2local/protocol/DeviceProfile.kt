@@ -21,6 +21,7 @@ data class DeviceProfile(
     val model: String? = null,
     val match: DeviceMatch = DeviceMatch(),
     val transport: TransportSpec = TransportSpec(),
+    val ble: BleSpec = BleSpec(),
     val framing: FramingSpec = FramingSpec(),
     val state: StateSpec = StateSpec(),
     /** The allowlist. A command that is not in here is not sent. */
@@ -91,6 +92,16 @@ data class DeviceProfile(
                 require(UUID_PATTERN.matches(uuid)) { "not a UUID" }
             }
         }
+        val bleUuids = ble.serviceUuids + ble.blockedServiceUuids +
+            listOfNotNull(ble.writeCharacteristicUuid, ble.notifyCharacteristicUuid)
+        for (uuid in bleUuids) {
+            check("ble uuid '$uuid'") {
+                require(UUID_PATTERN.matches(uuid)) { "not a UUID" }
+            }
+        }
+        if (ble.requestMtu !in 23..517) {
+            problems += "ble.requestMtu must be in 23..517, got ${ble.requestMtu}"
+        }
         for (spec in blockedCommands) {
             check("blockedCommands['$spec']") { Command.parse(spec) }
         }
@@ -155,6 +166,39 @@ data class TransportSpec(
     val connectTimeoutMs: Long = 12_000,
     /** Soundcore devices accept one control client at a time; retry a failed connect. */
     val connectAttempts: Int = 3,
+)
+
+/**
+ * The Bluetooth Low Energy path.
+ *
+ * Every published source describes the Soundcore control protocol over classic RFCOMM,
+ * but all of them concern headphones and the Space 2. If a speaker turns out to use GATT
+ * instead, nothing about the framing or the commands changes — only the pipe. So this
+ * configures the pipe and nothing else.
+ */
+@Serializable
+data class BleSpec(
+    val enabled: Boolean = true,
+    /** Preferred control services. Empty means: work it out from what the device offers. */
+    val serviceUuids: List<String> = emptyList(),
+    val writeCharacteristicUuid: String? = null,
+    val notifyCharacteristicUuid: String? = null,
+    /**
+     * Services that must never be touched, checked before anything else.
+     *
+     * These are firmware update services. The command allowlist already refuses every
+     * unknown command, but a DFU service is the one place where a single stray write can
+     * leave the speaker unusable, so it gets a hard rule of its own one layer down. The
+     * list covers Nordic's Secure DFU and its legacy DFU service, which are the ones
+     * commonly embedded in Bluetooth audio chipsets; it is not exhaustive, and a service
+     * you identify as an updater belongs in here too.
+     */
+    val blockedServiceUuids: List<String> = listOf(
+        "0000fe59-0000-1000-8000-00805f9b34fb",
+        "00001530-1212-efde-1523-785feabcd123",
+    ),
+    /** Asked for after connecting; a larger MTU means fewer writes per frame. */
+    val requestMtu: Int = 517,
 )
 
 @Serializable

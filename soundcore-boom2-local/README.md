@@ -74,7 +74,11 @@ und in beiden Faellen siehst du im Reiter **Protokoll** die rohen Bytes. Der Weg
 
 Gebaut wird in GitHub Actions, du brauchst also nichts zu installieren:
 
-**[boom2-local.apk direkt herunterladen](https://github.com/Citopyth/gin-prometheus/releases/download/boom2local-latest/boom2-local.apk)**
+**[boom2-local.apk direkt herunterladen](https://github.com/Citopyth/gin-prometheus/releases/latest/download/boom2-local.apk)**
+
+Dauerhafter Zweitlink, falls der obige klemmt:
+`https://github.com/Citopyth/gin-prometheus/releases/download/boom2local-latest/boom2-local.apk`
+Daneben liegt `boom2-local.apk.sha256` mit der Pruefsumme.
 
 Das ist ein Release-Asset: kein GitHub-Login, kein ZIP, auf dem Handy ein Tipp. Der
 Link bleibt ueber alle kuenftigen Builds gleich, weil der Workflow immer denselben Tag
@@ -125,6 +129,33 @@ cd soundcore-boom2-local/protocol-verify
 > das SDK bereit. Der Workflow `.github/workflows/boom2local.yml` ist also nicht nur
 > die Bequemlichkeit, aus der das APK faellt, sondern die Stelle, an der diese Schicht
 > ueberhaupt zum ersten Mal einen Compiler gesehen hat. Beides ist gruen.
+
+## Zwei Transportwege
+
+Die App kann die Frames ueber beide Bluetooth-Wege schicken, umschaltbar im Reiter
+*Geraet*:
+
+- **RFCOMM (klassisch)** — der Weg, den alle veroeffentlichten Quellen beschreiben. Die
+  App probiert die Dienste, die deine Box per SDP wirklich anbietet, zuerst die
+  herstellerspezifischen, danach erst die geratenen Kandidaten aus dem Profil.
+- **BLE (GATT)** — fuer den Fall, dass dieses Modell den anderen Weg geht. Welcher
+  GATT-Dienst der Steuerkanal ist, entscheidet `GattSelector` im Protokoll-Kern: gesucht
+  wird ein nicht-standardisierter Dienst mit je einer beschreibbaren und einer meldenden
+  Eigenschaft. Diese Auswahl ist unit-getestet, nicht nur an einem Geraet ausprobiert.
+- **automatisch** (Standard) — erst RFCOMM, dann BLE, und die Fehlermeldung nennt am
+  Ende beide Versuche.
+
+Framing, Allowlist und Decoder sind in beiden Faellen dieselben; nur das Rohr ist anders.
+
+**Firmware-Dienste sind im BLE-Pfad hart gesperrt**, vor jeder anderen Pruefung: Nordic
+Secure DFU (`0000fe59-…`) und das aeltere DFU-Profil (`00001530-…`). Die Command-Allowlist
+blockt ohnehin alles Unbekannte, aber ein versehentlicher Schreibzugriff in einen
+Update-Dienst ist der eine Fehler, der nicht reparabel ist — der bekommt eine eigene
+Regel eine Ebene tiefer. Die Liste ist nicht vollstaendig und steht im Profil unter
+`ble.blockedServiceUuids`.
+
+Auch der BLE-Weg **scannt nicht**: er verbindet direkt zum bereits gekoppelten Geraet.
+Die Standort-Berechtigung bleibt damit aussen vor.
 
 ## Protokoll kartografieren
 

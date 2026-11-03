@@ -94,7 +94,10 @@ jobs:
           {
             echo "Automatischer Build aus Commit \`${GITHUB_SHA}\`."
             echo
-            echo "**Download:** \`boom2-local.apk\` unten unter *Assets*."
+            echo "**Download:** \`boom2-local.apk\` unten unter *Assets*, oder direkt:"
+            echo "<https://github.com/${GITHUB_REPOSITORY}/releases/latest/download/boom2-local.apk>"
+            echo
+            echo "Pruefsumme in \`boom2-local.apk.sha256\`."
             echo "Auf dem Handy oeffnen und die Installation aus unbekannter Quelle bestaetigen."
             echo
             echo "Die Boom 2 muss vorher in den Android-Bluetooth-Einstellungen gekoppelt sein -"
@@ -113,17 +116,23 @@ jobs:
             echo "- Signiert mit einem Debug-Schluessel, der zwischen den CI-Laeufen erhalten"
             echo "  bleibt: ein neuerer Build installiert sich als Update darueber."
           } > release-notes.md
+          sha256sum boom2-local.apk > boom2-local.apk.sha256
+          # Not a prerelease: that is what makes /releases/latest/download work and puts
+          # the APK on the repository's front page. The notes carry the honesty instead.
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" \
-              --notes-file release-notes.md --prerelease
+              --notes-file release-notes.md --prerelease=false --latest
           else
             gh release create "$TAG" --repo "$GITHUB_REPOSITORY" \
               --title "Boom2 Local - Entwicklungsstand" \
-              --notes-file release-notes.md --prerelease --target "$GITHUB_SHA"
+              --notes-file release-notes.md --latest --target "$GITHUB_SHA"
           fi
-          gh release upload "$TAG" boom2-local.apk --repo "$GITHUB_REPOSITORY" --clobber
+          gh release upload "$TAG" boom2-local.apk boom2-local.apk.sha256 \
+            --repo "$GITHUB_REPOSITORY" --clobber
           echo "Direkter Download:"
           echo "https://github.com/$GITHUB_REPOSITORY/releases/download/$TAG/boom2-local.apk"
+          echo "https://github.com/$GITHUB_REPOSITORY/releases/latest/download/boom2-local.apk"
+          echo "SHA256: $(cat boom2-local.apk.sha256)"
 
       - uses: actions/upload-artifact@v4
         with:

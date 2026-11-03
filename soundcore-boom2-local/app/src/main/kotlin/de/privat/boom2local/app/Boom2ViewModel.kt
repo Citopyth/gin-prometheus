@@ -1,10 +1,13 @@
 package de.privat.boom2local.app
 
 import android.app.Application
+import android.content.Context
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import de.privat.boom2local.app.bt.BluetoothLink
+import de.privat.boom2local.app.bt.ControlTransport
 import de.privat.boom2local.app.bt.DeviceFinder
+import de.privat.boom2local.app.bt.GattTransport
+import de.privat.boom2local.app.bt.RfcommTransport
 import de.privat.boom2local.app.bt.FoundDevice
 import de.privat.boom2local.protocol.AuditEntry
 import de.privat.boom2local.protocol.AuditKind
@@ -17,6 +20,7 @@ import de.privat.boom2local.protocol.CommandSpec
 import de.privat.boom2local.protocol.DecodedState
 import de.privat.boom2local.protocol.DeviceProfile
 import de.privat.boom2local.protocol.Frame
+import de.privat.boom2local.protocol.GattService
 import de.privat.boom2local.protocol.Hex
 import de.privat.boom2local.protocol.PolicyDecision
 import de.privat.boom2local.protocol.RawMode
@@ -27,6 +31,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+
+/** Which pipe to carry the frames over. */
+enum class TransportChoice { AUTO, RFCOMM, BLE }
 
 /** Where the Bluetooth link currently stands. */
 sealed interface LinkState {
@@ -59,6 +66,9 @@ class UiState(
     val sdpNote: String? = null,
     /** Also try the standard Bluetooth profiles as connection targets. */
     val tryStandardProfiles: Boolean = false,
+    val transport: TransportChoice = TransportChoice.AUTO,
+    /** GATT services seen on the last BLE attempt, successful or not. */
+    val gattServices: List<GattService> = emptyList(),
     val message: String? = null,
 ) {
     val profile: DeviceProfile? get() = loaded?.profile
@@ -70,7 +80,8 @@ class Boom2ViewModel(application: Application) : AndroidViewModel(application) {
     private val store = ProfileStore(application)
     private val finder = DeviceFinder(application)
 
-    private var link: BluetoothLink? = null
+    private val appContext: Context = application.applicationContext
+    private var link: ControlTransport? = null
     private var frameJob: Job? = null
 
     private val _ui = MutableStateFlow(UiState())
@@ -198,6 +209,11 @@ class Boom2ViewModel(application: Application) : AndroidViewModel(application) {
         _ui.update { it.copyWith(tryStandardProfiles = value) }
     }
 
+    fun setTransport(choice: TransportChoice) {
+        audit.add(AuditKind.INFO, "Transportweg: $choice", timestampMs = now())
+        _ui.update { it.copyWith(transport = choice, audit = audit.snapshot()) }
+    }
+
     /** The whole SDP picture of the selected device, for pasting into a bug report. */
     fun sdpExport(): String {
         val selected = _ui.value.selected ?: return "Kein Geraet ausgewaehlt."
@@ -209,6 +225,29 @@ class Boom2ViewModel(application: Application) : AndroidViewModel(application) {
             for (uuid in selected.allUuids) {
                 val kind = if (uuid in selected.customUuids) "herstellerspezifisch" else "Standardprofil"
                 appendLine("  $uuid  ($kind)")
+            }
+            val gatt = _ui.value.gattServices
+            if (gatt.isEmpty()) {
+                appendLine()
+                appendLine("GATT: noch nicht abgefragt (einmal mit BLE verbinden).")
+            } else {
+                appendLine()
+                appendLine("GATT-Dienste: ${gatt.size}")
+                for (service in gatt) {
+                    appendLine("  ${service.uuid}")
+                    for (characteristic in service.characteristics) {
+                        val flags = buildList {
+                            if (characteristic.write) add("write")
+                            if (characteristic.writeNoResponse) add("write-no-response")
+                            if (characteristic.notify) add("notify")
+                            if (characteristic.indicate) add("indicate")
+                        }
+                        appendLine(
+                            "    ${characteristic.uuid}  " +
+                                if (flags.isEmpty()) "(nur lesbar)" else flags.joinToString(","),
+                        )
+                    }
+                }
             }
         }
     }
@@ -223,62 +262,91 @@ class Boom2ViewModel(application: Application) : AndroidViewModel(application) {
             note("${device.name} passt nicht zum Profil ${profile.displayName}.")
             return
         }
-        val candidates = finder.resolveServiceUuids(
+
+        val rfcommCandidates = finder.resolveServiceUuids(
             found = device,
             profile = profile,
             includeStandardProfiles = state.tryStandardProfiles,
-        )
-        if (candidates.isEmpty()) {
+        ).map { RfcommTransport.UuidCandidate(it.uuid, it.origin) }
+
+        // Classic first when the speaker advertises anything usable, because every
+        // published description of this protocol is RFCOMM. BLE is the fallback, and the
+        // only way to find out whether this model went the other way.
+        val plan = mutableListOf<ControlTransport>()
+        fun rfcomm() = RfcommTransport(profile, audit, rfcommCandidates, ::now)
+        fun gatt() = GattTransport(appContext, profile, audit, ::now)
+        when (state.transport) {
+            TransportChoice.RFCOMM -> plan += rfcomm()
+            TransportChoice.BLE -> plan += gatt()
+            TransportChoice.AUTO -> {
+                if (rfcommCandidates.isNotEmpty()) plan += rfcomm()
+                if (profile.ble.enabled) plan += gatt()
+            }
+        }
+        if (plan.isEmpty()) {
             note(
-                "Die Box bietet keinen Dienst mit dem Praefix " +
-                    "${profile.transport.uuidPrefix} an, und das Profil nennt keinen " +
-                    "Rueckfall-Kandidaten.",
+                "Kein Transportweg uebrig: die Box bietet keinen RFCOMM-Dienst an und BLE " +
+                    "ist im Profil abgeschaltet.",
             )
             return
         }
+
         disconnect()
-        val created = BluetoothLink(profile, audit, ::now)
-        link = created
         _ui.update { it.copyWith(link = LinkState.Connecting) }
-        frameJob = viewModelScope.launch {
-            created.frames.collect { frame -> onFrame(frame) }
-        }
         viewModelScope.launch {
-            try {
-                val uuid = created.connect(device.device, candidates.map { it.uuid })
-                val origin = candidates.firstOrNull { it.uuid == uuid }?.origin ?: ""
-                _ui.update {
-                    it.copyWith(
-                        link = LinkState.Connected(uuid.toString(), origin),
-                        audit = audit.snapshot(),
-                    )
+            val failures = mutableListOf<String>()
+            for (transport in plan) {
+                link = transport
+                val collector = viewModelScope.launch {
+                    transport.frames.collect { frame -> onFrame(frame) }
                 }
-                runHandshake(profile)
-                readState()
-            } catch (e: Exception) {
-                val reason = buildString {
-                    append(e.message ?: e.javaClass.simpleName)
-                    if (device.customUuids.isEmpty()) {
-                        append(
-                            "\n\nDie Box bietet laut SDP keinen herstellerspezifischen " +
-                                "Dienst an, es wurden also nur geratene UUIDs probiert. " +
-                                "Drueck zuerst \"SDP neu abfragen\": die gespeicherte " +
-                                "Liste stammt vom Koppeln und ist oft unvollstaendig.",
+                frameJob = collector
+                try {
+                    val target = transport.connect(device.device)
+                    _ui.update {
+                        it.copyWith(
+                            link = LinkState.Connected(
+                                target.label,
+                                "${transport.name} - ${target.detail}",
+                            ),
+                            gattServices = gattServicesOf(transport) ?: it.gattServices,
+                            audit = audit.snapshot(),
+                        )
+                    }
+                    runHandshake(profile)
+                    readState()
+                    return@launch
+                } catch (e: Exception) {
+                    failures += "${transport.name}: ${e.message ?: e.javaClass.simpleName}"
+                    collector.cancel()
+                    if (frameJob === collector) frameJob = null
+                    val seen = gattServicesOf(transport)
+                    transport.shutdown()
+                    if (link === transport) link = null
+                    _ui.update {
+                        it.copyWith(
+                            gattServices = seen ?: it.gattServices,
+                            audit = audit.snapshot(),
                         )
                     }
                 }
-                // Tear the failed link down completely rather than leaving a collector
-                // and a coroutine scope behind for every attempt that did not work out.
-                frameJob?.cancel()
-                frameJob = null
-                created.shutdown()
-                if (link === created) link = null
-                _ui.update {
-                    it.copyWith(link = LinkState.Failed(reason), audit = audit.snapshot())
+            }
+            val reason = buildString {
+                append(failures.joinToString("\n\n"))
+                if (device.customUuids.isEmpty()) {
+                    append(
+                        "\n\nDie Box bietet laut SDP keinen herstellerspezifischen Dienst " +
+                            "an. Drueck zuerst \"SDP neu abfragen\": die gespeicherte Liste " +
+                            "stammt vom Koppeln und ist oft unvollstaendig.",
+                    )
                 }
             }
+            _ui.update { it.copyWith(link = LinkState.Failed(reason), audit = audit.snapshot()) }
         }
     }
+
+    private fun gattServicesOf(transport: ControlTransport): List<GattService>? =
+        (transport as? GattTransport)?.discoveredServices?.takeIf { it.isNotEmpty() }
 
     fun disconnect() {
         frameJob?.cancel()
@@ -541,6 +609,8 @@ private fun UiState.copyWith(
     sdpBusy: Boolean = this.sdpBusy,
     sdpNote: String? = this.sdpNote,
     tryStandardProfiles: Boolean = this.tryStandardProfiles,
+    transport: TransportChoice = this.transport,
+    gattServices: List<GattService> = this.gattServices,
     message: String? = this.message,
 ): UiState = UiState(
     loaded = loaded,
@@ -560,5 +630,7 @@ private fun UiState.copyWith(
     sdpBusy = sdpBusy,
     sdpNote = sdpNote,
     tryStandardProfiles = tryStandardProfiles,
+    transport = transport,
+    gattServices = gattServices,
     message = message,
 )

@@ -21,7 +21,11 @@ Stand der Recherche: 2. November 2026.
 ## Transport
 
 **Belegt (Q4, Q5):** klassisches Bluetooth, RFCOMM. Von BLE/GATT ist in keiner Quelle
-die Rede. Deshalb benutzt diese App ausschliesslich RFCOMM — was zugleich die
+die Rede. Alle Quellen betreffen allerdings Kopfhoerer und die Space 2 — fuer einen
+Party-Lautsprecher ist GATT damit nicht ausgeschlossen, nur unbelegt. Seit dem ersten
+fehlgeschlagenen Verbindungsversuch an echter Hardware (siehe unten) kann die App
+**beide** Wege: RFCOMM und GATT, mit identischem Framing. Der urspruengliche Satz hier
+lautete, die App benutze ausschliesslich RFCOMM — was zugleich die
 Angriffsfläche klein haelt und den Scan (und damit die Standort-Berechtigung) erspart.
 
 **Belegt (Q4):** die UUID ist **nicht** die Standard-SPP-UUID, sondern herstellerspezifisch.

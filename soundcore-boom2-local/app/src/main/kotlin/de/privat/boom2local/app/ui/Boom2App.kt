@@ -9,6 +9,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
@@ -17,6 +19,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -44,7 +47,9 @@ import androidx.compose.ui.unit.dp
 import de.privat.boom2local.app.Boom2ViewModel
 import de.privat.boom2local.app.LinkState
 import de.privat.boom2local.app.SelfCheck
+import de.privat.boom2local.app.TransportChoice
 import de.privat.boom2local.app.UiState
+import de.privat.boom2local.protocol.GattSelector
 
 private val TabTitles = listOf("Geraet", "Steuern", "Protokoll", "Sicherheit")
 
@@ -98,6 +103,7 @@ fun Boom2App(model: Boom2ViewModel) {
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun DeviceTab(
     state: UiState,
@@ -233,6 +239,54 @@ private fun DeviceTab(
 
                 is LinkState.Failed -> Note(link.reason, warning = true)
             }
+            if (state.gattServices.isNotEmpty()) {
+                HorizontalDivider()
+                Note(
+                    "GATT-Dienste der Box (${state.gattServices.size}, " +
+                        "* = herstellerspezifisch):",
+                )
+                for (service in state.gattServices) {
+                    Mono(
+                        (if (GattSelector.isCustom(service.uuid)) "* " else "  ") + service.uuid,
+                    )
+                    for (characteristic in service.characteristics) {
+                        val flags = buildList {
+                            if (characteristic.write) add("schreiben")
+                            if (characteristic.writeNoResponse) add("schreiben-ohne-Antwort")
+                            if (characteristic.notify) add("meldet")
+                            if (characteristic.indicate) add("meldet-bestaetigt")
+                        }
+                        Mono(
+                            "      ${characteristic.uuid}  " +
+                                if (flags.isEmpty()) "(nur lesbar)" else flags.joinToString(", "),
+                        )
+                    }
+                }
+            }
+            Text("Transportweg", style = MaterialTheme.typography.bodyMedium)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                for (choice in TransportChoice.entries) {
+                    FilterChip(
+                        selected = state.transport == choice,
+                        onClick = { model.setTransport(choice) },
+                        label = {
+                            Text(
+                                when (choice) {
+                                    TransportChoice.AUTO -> "automatisch"
+                                    TransportChoice.RFCOMM -> "RFCOMM"
+                                    TransportChoice.BLE -> "BLE"
+                                },
+                            )
+                        },
+                    )
+                }
+            }
+            Note(
+                "Automatisch heisst: erst klassisches RFCOMM, dann BLE. Alle " +
+                    "veroeffentlichten Beschreibungen dieses Protokolls betreffen RFCOMM, " +
+                    "aber nur Kopfhoerer und die Space 2 - ob dieser Lautsprecher " +
+                    "stattdessen BLE spricht, zeigt erst der Versuch.",
+            )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(
                     onClick = { model.refreshSdp() },

@@ -2,6 +2,7 @@ package de.privat.boom2local.protocol
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
 class ProfileFileTest {
@@ -85,6 +86,35 @@ class ProfileFileTest {
         assertEquals(eq.indices.sorted(), eq.indices)
         val steps = eq.indices.zipWithNext { a, b -> b - a }.toSet()
         assertEquals(setOf(3), steps, "the profile documents a stride of 3")
+    }
+
+    @Test
+    fun `the ble section blocks the firmware services and guesses nothing`() {
+        assertTrue(profile.ble.enabled)
+        // No service is named: on an unmapped device the selector has to work it out,
+        // and a guess here would send writes to whatever happened to be listed.
+        assertEquals(emptyList(), profile.ble.serviceUuids)
+        assertEquals(null, profile.ble.writeCharacteristicUuid)
+        assertEquals(null, profile.ble.notifyCharacteristicUuid)
+        assertTrue(
+            profile.ble.blockedServiceUuids.any { it.startsWith("0000fe59") },
+            "Nordic Secure DFU must be blocked",
+        )
+        assertTrue(
+            profile.ble.blockedServiceUuids.any { it.startsWith("00001530") },
+            "the legacy DFU service must be blocked",
+        )
+    }
+
+    @Test
+    fun `a firmware service is unreachable with the shipped profile`() {
+        val dfu = GattService(
+            uuid = "0000fe59-0000-1000-8000-00805f9b34fb",
+            characteristics = listOf(
+                GattCharacteristic("8ec90001-f315-4f60-9fb8-838830daea50", write = true, notify = true),
+            ),
+        )
+        assertIs<GattSelection.None>(GattSelector.select(listOf(dfu), profile.ble))
     }
 
     @Test
