@@ -4,10 +4,17 @@ import android.Manifest
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothManager
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.os.Build
+import android.os.ParcelUuid
+import androidx.core.content.ContextCompat
 import de.privat.boom2local.protocol.DeviceProfile
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.withTimeoutOrNull
 import java.util.UUID
 
 /** A paired Bluetooth device, as far as the app is allowed to see it. */
@@ -17,10 +24,33 @@ class FoundDevice(
     val address: String,
     /** True when the name matches the loaded profile. */
     val matchesProfile: Boolean,
-    /** The vendor control UUID from the device's own SDP record, if it advertises one. */
+    /** An advertised service matching the profile's vendor prefix, if there is one. */
     val vendorUuid: String?,
+    /** Everything the device's SDP record offers. */
     val allUuids: List<String>,
-)
+) {
+    /**
+     * Advertised services that are not standard Bluetooth profiles.
+     *
+     * A UUID ending in the Bluetooth base suffix is a registered profile — A2DP, AVRCP,
+     * handsfree and so on. Anything else was made up by the manufacturer, which makes it
+     * the only plausible place for a proprietary control channel. This matters more than
+     * the profile's vendor prefix: that prefix is a guess from other models, while this
+     * is a property of the service itself.
+     */
+    val customUuids: List<String> = allUuids.filterNot { it.endsWith(BLUETOOTH_BASE_SUFFIX) }
+
+    /** The standard Serial Port Profile, a common fallback for vendor protocols. */
+    val sppUuid: String? = allUuids.firstOrNull { it.startsWith("00001101") }
+
+    companion object {
+        /** Registered Bluetooth profile UUIDs all end in this. */
+        const val BLUETOOTH_BASE_SUFFIX = "-0000-1000-8000-00805f9b34fb"
+    }
+}
+
+/** Outcome of a fresh SDP query. */
+class SdpResult(val uuids: List<String>, val note: String?, val fresh: Boolean)
 
 /**
  * Finds the speaker among the phone's paired devices.
@@ -61,24 +91,23 @@ class DeviceFinder(private val context: Context) {
             return emptyList()
         }
         return bonded
-            .map { describe(it, profile) }
+            .map { describe(it, profile, cachedUuids(it)) }
             .sortedWith(
                 compareByDescending<FoundDevice> { it.matchesProfile }
-                    .thenByDescending { it.vendorUuid != null }
+                    .thenByDescending { it.customUuids.isNotEmpty() }
                     .thenBy { it.name },
             )
     }
 
-    private fun describe(device: BluetoothDevice, profile: DeviceProfile): FoundDevice {
+    fun describe(
+        device: BluetoothDevice,
+        profile: DeviceProfile,
+        uuids: List<String>,
+    ): FoundDevice {
         val name = try {
             device.name
         } catch (e: SecurityException) {
             null
-        }
-        val uuids = try {
-            device.uuids?.map { it.uuid.toString().lowercase() } ?: emptyList()
-        } catch (e: SecurityException) {
-            emptyList()
         }
         val prefix = profile.transport.uuidPrefix.lowercase()
         return FoundDevice(
@@ -91,15 +120,99 @@ class DeviceFinder(private val context: Context) {
         )
     }
 
+    /** The SDP record Android already has, which can be stale or incomplete. */
+    fun cachedUuids(device: BluetoothDevice): List<String> = try {
+        device.uuids?.mapNotNull { it?.uuid?.toString()?.lowercase() } ?: emptyList()
+    } catch (e: SecurityException) {
+        emptyList()
+    }
+
+    /**
+     * Asks the speaker itself which services it offers, instead of trusting the cache.
+     *
+     * `BluetoothDevice.uuids` returns whatever Android stored at pairing time, and for a
+     * speaker paired for audio that can be just the audio profiles. `fetchUuidsWithSdp`
+     * queries the device over the air and answers through a broadcast, which is the only
+     * way to see a control service the cache never recorded.
+     */
+    suspend fun refreshSdp(device: BluetoothDevice, timeoutMs: Long = 15_000): SdpResult {
+        if (!hasConnectPermission()) {
+            return SdpResult(emptyList(), "Bluetooth-Berechtigung fehlt.", false)
+        }
+        val answer = CompletableDeferred<List<String>>()
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(received: Context?, intent: Intent?) {
+                if (intent?.action != BluetoothDevice.ACTION_UUID) return
+                @Suppress("DEPRECATION")
+                val from = intent.getParcelableExtra<BluetoothDevice>(BluetoothDevice.EXTRA_DEVICE)
+                if (from?.address != device.address) return
+                @Suppress("DEPRECATION")
+                val extra = intent.getParcelableArrayExtra(BluetoothDevice.EXTRA_UUID)
+                val uuids = extra.orEmpty()
+                    .filterIsInstance<ParcelUuid>()
+                    .map { it.uuid.toString().lowercase() }
+                if (!answer.isCompleted) answer.complete(uuids)
+            }
+        }
+        ContextCompat.registerReceiver(
+            context,
+            receiver,
+            IntentFilter(BluetoothDevice.ACTION_UUID),
+            ContextCompat.RECEIVER_EXPORTED,
+        )
+        try {
+            val started = try {
+                device.fetchUuidsWithSdp()
+            } catch (e: SecurityException) {
+                false
+            }
+            if (!started) {
+                return SdpResult(
+                    cachedUuids(device),
+                    "Android hat die SDP-Abfrage nicht gestartet. Angezeigt ist die " +
+                        "zwischengespeicherte Liste.",
+                    false,
+                )
+            }
+            val fresh = withTimeoutOrNull(timeoutMs) { answer.await() }
+            return if (fresh == null) {
+                SdpResult(
+                    cachedUuids(device),
+                    "Keine Antwort innerhalb von ${timeoutMs / 1000} Sekunden. Die Box muss " +
+                        "eingeschaltet und in Reichweite sein. Angezeigt ist die " +
+                        "zwischengespeicherte Liste.",
+                    false,
+                )
+            } else {
+                SdpResult(fresh, null, true)
+            }
+        } finally {
+            try {
+                context.unregisterReceiver(receiver)
+            } catch (e: Exception) {
+                // Already gone; nothing to do.
+            }
+        }
+    }
+
     /**
      * Every RFCOMM service worth trying, best first.
      *
-     * The device's own SDP record comes first, so the app does not depend on anyone
-     * having guessed the last four digits of the vendor UUID correctly. The profile's
-     * candidates follow as fallbacks, and the caller tries them in turn — listing three
-     * fallbacks would be pointless if only the first were ever attempted.
+     * Order matters, and it puts what the device actually says ahead of what the profile
+     * guesses:
+     *
+     *  1. a service matching the profile's vendor prefix — a guess confirmed by the device
+     *  2. every other non-standard service the device advertises — real, and the only
+     *     place a proprietary protocol can live
+     *  3. the profile's fallback candidates — pure guesses from other models
+     *  4. Serial Port Profile, if offered
+     *  5. with [includeStandardProfiles], the registered profiles too, as a last resort
      */
-    fun resolveServiceUuids(found: FoundDevice, profile: DeviceProfile): List<UuidChoice> {
+    fun resolveServiceUuids(
+        found: FoundDevice,
+        profile: DeviceProfile,
+        includeStandardProfiles: Boolean = false,
+    ): List<UuidChoice> {
         val choices = mutableListOf<UuidChoice>()
         val seen = mutableSetOf<UUID>()
 
@@ -112,9 +225,18 @@ class DeviceFinder(private val context: Context) {
             if (seen.add(uuid)) choices += UuidChoice(uuid, origin)
         }
 
-        found.vendorUuid?.let { add(it, "aus dem SDP-Eintrag des Geraets") }
+        found.vendorUuid?.let { add(it, "Dienst der Box, passt zum Hersteller-Praefix") }
+        for (uuid in found.customUuids) {
+            add(uuid, "herstellerspezifischer Dienst der Box")
+        }
         for (candidate in profile.transport.fallbackUuids) {
-            add(candidate, "Rueckfall-Kandidat aus dem Profil (unbestaetigt)")
+            add(candidate, "Rueckfall-Kandidat aus dem Profil (geraten)")
+        }
+        found.sppUuid?.let { add(it, "serieller Standarddienst (SPP) der Box") }
+        if (includeStandardProfiles) {
+            for (uuid in found.allUuids) {
+                add(uuid, "Standardprofil der Box (letzter Versuch)")
+            }
         }
         return choices
     }

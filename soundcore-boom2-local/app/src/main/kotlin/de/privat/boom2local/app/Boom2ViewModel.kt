@@ -53,6 +53,12 @@ class UiState(
     val arguments: Map<String, Map<String, Int>> = emptyMap(),
     val audit: List<AuditEntry> = emptyList(),
     val capture: CaptureReport? = null,
+    /** A fresh SDP query is running. */
+    val sdpBusy: Boolean = false,
+    /** What the last SDP query had to say, if anything went sideways. */
+    val sdpNote: String? = null,
+    /** Also try the standard Bluetooth profiles as connection targets. */
+    val tryStandardProfiles: Boolean = false,
     val message: String? = null,
 ) {
     val profile: DeviceProfile? get() = loaded?.profile
@@ -147,7 +153,64 @@ class Boom2ViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun select(device: FoundDevice) {
-        _ui.update { it.copyWith(selected = device) }
+        _ui.update { it.copyWith(selected = device, sdpNote = null) }
+    }
+
+    /**
+     * Asks the speaker which services it really offers.
+     *
+     * The paired-device list only carries what Android cached at pairing time, and for a
+     * speaker paired for audio that is often just the audio profiles. Without this, a
+     * control service the cache never recorded is invisible — which is exactly the state
+     * that makes every connection attempt fail against guessed UUIDs.
+     */
+    fun refreshSdp() {
+        val state = _ui.value
+        val profile = state.profile ?: return
+        val selected = state.selected ?: run { note("Kein Geraet ausgewaehlt."); return }
+        _ui.update { it.copyWith(sdpBusy = true, sdpNote = null) }
+        viewModelScope.launch {
+            val result = finder.refreshSdp(selected.device)
+            val updated = finder.describe(selected.device, profile, result.uuids)
+            audit.add(
+                if (result.fresh) AuditKind.INFO else AuditKind.ERROR,
+                "SDP-Abfrage ${selected.name}: ${result.uuids.size} Dienst(e), " +
+                    "${updated.customUuids.size} herstellerspezifisch" +
+                    (result.note?.let { " - $it" } ?: ""),
+                hex = result.uuids.joinToString(" "),
+                timestampMs = now(),
+            )
+            _ui.update { current ->
+                current.copyWith(
+                    devices = current.devices.map {
+                        if (it.address == updated.address) updated else it
+                    },
+                    selected = updated,
+                    sdpBusy = false,
+                    sdpNote = result.note,
+                    audit = audit.snapshot(),
+                )
+            }
+        }
+    }
+
+    fun setTryStandardProfiles(value: Boolean) {
+        _ui.update { it.copyWith(tryStandardProfiles = value) }
+    }
+
+    /** The whole SDP picture of the selected device, for pasting into a bug report. */
+    fun sdpExport(): String {
+        val selected = _ui.value.selected ?: return "Kein Geraet ausgewaehlt."
+        return buildString {
+            appendLine("Geraet: ${selected.name}")
+            appendLine("Adresse: ${selected.address}")
+            appendLine("Passt zum Profil: ${selected.matchesProfile}")
+            appendLine("Dienste laut SDP: ${selected.allUuids.size}")
+            for (uuid in selected.allUuids) {
+                val kind = if (uuid in selected.customUuids) "herstellerspezifisch" else "Standardprofil"
+                appendLine("  $uuid  ($kind)")
+            }
+        }
     }
 
     // --- connection -------------------------------------------------------------------
@@ -160,7 +223,11 @@ class Boom2ViewModel(application: Application) : AndroidViewModel(application) {
             note("${device.name} passt nicht zum Profil ${profile.displayName}.")
             return
         }
-        val candidates = finder.resolveServiceUuids(device, profile)
+        val candidates = finder.resolveServiceUuids(
+            found = device,
+            profile = profile,
+            includeStandardProfiles = state.tryStandardProfiles,
+        )
         if (candidates.isEmpty()) {
             note(
                 "Die Box bietet keinen Dienst mit dem Praefix " +
@@ -189,7 +256,17 @@ class Boom2ViewModel(application: Application) : AndroidViewModel(application) {
                 runHandshake(profile)
                 readState()
             } catch (e: Exception) {
-                val reason = e.message ?: e.javaClass.simpleName
+                val reason = buildString {
+                    append(e.message ?: e.javaClass.simpleName)
+                    if (device.customUuids.isEmpty()) {
+                        append(
+                            "\n\nDie Box bietet laut SDP keinen herstellerspezifischen " +
+                                "Dienst an, es wurden also nur geratene UUIDs probiert. " +
+                                "Drueck zuerst \"SDP neu abfragen\": die gespeicherte " +
+                                "Liste stammt vom Koppeln und ist oft unvollstaendig.",
+                        )
+                    }
+                }
                 // Tear the failed link down completely rather than leaving a collector
                 // and a coroutine scope behind for every attempt that did not work out.
                 frameJob?.cancel()
@@ -461,6 +538,9 @@ private fun UiState.copyWith(
     arguments: Map<String, Map<String, Int>> = this.arguments,
     audit: List<AuditEntry> = this.audit,
     capture: CaptureReport? = this.capture,
+    sdpBusy: Boolean = this.sdpBusy,
+    sdpNote: String? = this.sdpNote,
+    tryStandardProfiles: Boolean = this.tryStandardProfiles,
     message: String? = this.message,
 ): UiState = UiState(
     loaded = loaded,
@@ -477,5 +557,8 @@ private fun UiState.copyWith(
     arguments = arguments,
     audit = audit,
     capture = capture,
+    sdpBusy = sdpBusy,
+    sdpNote = sdpNote,
+    tryStandardProfiles = tryStandardProfiles,
     message = message,
 )

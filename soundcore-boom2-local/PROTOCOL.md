@@ -35,6 +35,16 @@ steht dort nicht.
 das `0cf12d31-fac3-4553-bd80-d6832e7d3138`, wenn die Boom 2 wirklich A3138 ist (das ist
 eine unbestaetigte Nutzerangabe in Q3).
 
+**Widerlegt am Geraet (2026-11-03):** ein erster Verbindungsversuch mit einer echten
+Boom 2 schlug ueber alle drei Rueckfall-Kandidaten fehl, mit
+`read failed, socket might closed or timeout, read ret: -1` — dem Android-Fehler fuer
+"diesen Dienst gibt es auf der Gegenstelle nicht". Die zwischengespeicherte Dienstliste
+der Box enthielt ausserdem nichts mit dem Praefix `0cf12d31-…`. Die Hypothese oben ist
+damit fuer die Boom 2 **nicht** bestaetigt, und `…d6832e7d3138` ist als Kandidat
+gescheitert. Offen bleibt, ob die Box eine ganz andere UUID benutzt oder ob Android
+beim Koppeln nur die Audio-Profile mitgeschrieben hat; eine frische SDP-Abfrage
+(`fetchUuidsWithSdp`) unterscheidet beides, und die App kann das seit diesem Stand.
+
 **Warum das nicht wichtig ist:** die App raet die UUID nicht. Sie liest den SDP-Eintrag
 der Box (`BluetoothDevice.uuids`) und nimmt den Dienst, der mit dem Praefix
 `0cf12d31-fac3-4553-bd80-d6832e7d` anfaengt. Nur wenn die Box *nichts* Passendes
@@ -142,7 +152,8 @@ im Experten-Modus gesperrt bleibt.
 - **Belegt und getestet:** Transport (RFCOMM), Vendor-UUID-Schema, Rahmenaufbau in der
   Struktur, `01 01` als Zustandsabfrage, Firmware-Offset der Boom 2.
 - **Gemeldet, plausibel, ungeprueft:** alle uebrigen Offsets und alle Schreibbefehle.
-- **Hypothese:** die letzten vier UUID-Stellen, `body[0]` als Akku-Prozent.
+- **Widerlegt:** `0cf12d31-…-d6832e7d3138` als UUID der Boom 2 (siehe oben).
+- **Hypothese:** das UUID-Schema als solches, `body[0]` als Akku-Prozent.
 - **Unbekannt:** Laengenfeld-Semantik, Handshake, OTA-Befehle, Zuordnung der
   EQ-Voreinstellungs-IDs zu Namen.
 

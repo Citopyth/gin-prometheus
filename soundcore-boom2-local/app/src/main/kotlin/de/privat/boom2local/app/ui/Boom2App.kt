@@ -24,6 +24,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
@@ -103,6 +104,7 @@ private fun DeviceTab(
     model: Boom2ViewModel,
     requestPermission: () -> Unit,
 ) {
+    val clipboard = LocalClipboardManager.current
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -188,13 +190,32 @@ private fun DeviceTab(
                             } else {
                                 Tag("anderes Geraet", warning = true)
                             }
-                            if (device.vendorUuid != null) {
-                                Tag("Steuerdienst gefunden")
-                            } else {
-                                Tag("kein Steuerdienst", warning = true)
+                            when {
+                                device.customUuids.isNotEmpty() ->
+                                    Tag("${device.customUuids.size} eigene Dienste")
+
+                                device.allUuids.isEmpty() ->
+                                    Tag("keine Dienste bekannt", warning = true)
+
+                                else -> Tag("nur Standardprofile", warning = true)
                             }
                         }
-                        if (device.vendorUuid != null) Mono(device.vendorUuid)
+                        if (selected) {
+                            if (device.allUuids.isEmpty()) {
+                                Note(
+                                    "Android hat zu diesem Geraet keine Dienstliste " +
+                                        "gespeichert. \"SDP neu abfragen\" unten holt sie " +
+                                        "direkt von der Box.",
+                                )
+                            } else {
+                                Note("Dienste laut SDP (* = herstellerspezifisch):")
+                                for (uuid in device.allUuids) {
+                                    Mono(
+                                        if (uuid in device.customUuids) "* $uuid" else "  $uuid",
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -212,6 +233,47 @@ private fun DeviceTab(
 
                 is LinkState.Failed -> Note(link.reason, warning = true)
             }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(
+                    onClick = { model.refreshSdp() },
+                    enabled = state.selected != null && !state.sdpBusy,
+                ) {
+                    Text(if (state.sdpBusy) "Frage ab ..." else "SDP neu abfragen")
+                }
+                OutlinedButton(
+                    onClick = {
+                        clipboard.setText(AnnotatedString(model.sdpExport()))
+                        model.note("Dienstliste in die Zwischenablage kopiert.")
+                    },
+                    enabled = state.selected != null,
+                ) {
+                    Text("Dienste kopieren")
+                }
+            }
+            Note(
+                "Die gespeicherte Dienstliste stammt vom Koppeln und ist bei Lautsprechern " +
+                    "oft unvollstaendig. Die Abfrage holt sie frisch von der Box, die dazu " +
+                    "eingeschaltet und in Reichweite sein muss.",
+            )
+            state.sdpNote?.let { Note(it, warning = true) }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Text(
+                    "Auch Standardprofile probieren",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Switch(
+                    checked = state.tryStandardProfiles,
+                    onCheckedChange = { model.setTryStandardProfiles(it) },
+                )
+            }
+            Note(
+                "Letzter Ausweg: verbindet versuchsweise auch auf A2DP, AVRCP und die " +
+                    "uebrigen Standardprofile. Das stoert die Musikwiedergabe nicht, " +
+                    "dauert aber laenger und fuehrt meist zu nichts.",
+            )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(
                     onClick = { model.connect() },
