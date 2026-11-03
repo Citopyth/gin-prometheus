@@ -74,11 +74,19 @@ und in beiden Faellen siehst du im Reiter **Protokoll** die rohen Bytes. Der Weg
 
 Gebaut wird in GitHub Actions, du brauchst also nichts zu installieren:
 
-**[boom2-local.apk direkt herunterladen](https://github.com/Citopyth/gin-prometheus/releases/latest/download/boom2-local.apk)**
+**[boom2-local-klein.apk herunterladen](https://github.com/Citopyth/gin-prometheus/releases/latest/download/boom2-local-klein.apk)**
+— die minifizierte Fassung, auf dem Handy die zuverlaessigste.
 
-Dauerhafter Zweitlink, falls der obige klemmt:
-`https://github.com/Citopyth/gin-prometheus/releases/download/boom2local-latest/boom2-local.apk`
-Daneben liegt `boom2-local.apk.sha256` mit der Pruefsumme.
+Falls sie sich merkwuerdig verhaelt, liegt daneben die unveraenderte Fassung, die nicht
+durch R8 gegangen ist:
+[boom2-local.apk](https://github.com/Citopyth/gin-prometheus/releases/latest/download/boom2-local.apk).
+Beide tragen dieselbe Signatur und ersetzen einander beim Installieren; Pruefsummen
+stehen in `boom2-local.sha256`.
+
+> Haengt der Download im Browser, liegt es meist nicht an GitHub: ein VPN mit
+> Kill-Switch (NordVPN & Co.) blockiert den Verkehr, sobald der Tunnel kurz abreisst,
+> und der Browser bleibt dann im Fortschrittsbalken stehen. VPN kurz aus, Download neu
+> starten.
 
 Das ist ein Release-Asset: kein GitHub-Login, kein ZIP, auf dem Handy ein Tipp. Der
 Link bleibt ueber alle kuenftigen Builds gleich, weil der Workflow immer denselben Tag

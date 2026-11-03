@@ -69,19 +69,24 @@ jobs:
               :app:assembleRelease \
               :app:verifyDependencyAllowlist
           cp app/build/outputs/apk/debug/app-debug.apk boom2-local.apk
+          # The minified build is the one worth downloading on a phone; the unminified
+          # one stays as the fallback if R8 ever breaks something at runtime.
+          cp app/build/outputs/apk/release/app-release.apk boom2-local-klein.apk
+          ls -l boom2-local.apk boom2-local-klein.apk
 
       # Proof, in the build log, that the shipped APK cannot reach the network.
-      - name: Show the permissions the APK actually requests
+      - name: Show the permissions the APKs actually request
         run: |
           AAPT=$(ls -d "$ANDROID_HOME"/build-tools/*/aapt2 | sort -V | tail -1)
-          echo "--- uses-permission entries in boom2-local.apk ---"
-          "$AAPT" dump permissions boom2-local.apk | sed -n '/permission/p'
-          echo "--- checking for network permissions ---"
-          if "$AAPT" dump permissions boom2-local.apk | grep -qE "android\.permission\.(INTERNET|ACCESS_NETWORK_STATE)"; then
-            echo "FAIL: the APK requests network access"
-            exit 1
-          fi
-          echo "OK: no network permission in the packaged APK"
+          for apk in boom2-local.apk boom2-local-klein.apk; do
+            echo "--- uses-permission entries in $apk ---"
+            "$AAPT" dump permissions "$apk" | sed -n '/permission/p'
+            if "$AAPT" dump permissions "$apk" | grep -qE "android\.permission\.(INTERNET|ACCESS_NETWORK_STATE)"; then
+              echo "FAIL: $apk requests network access"
+              exit 1
+            fi
+            echo "OK: no network permission in $apk"
+          done
 
       # Actions artifacts need a logged-in GitHub session and arrive as a zip, which is
       # awkward on a phone. A release asset is a plain, direct .apk link instead. One
@@ -94,10 +99,16 @@ jobs:
           {
             echo "Automatischer Build aus Commit \`${GITHUB_SHA}\`."
             echo
-            echo "**Download:** \`boom2-local.apk\` unten unter *Assets*, oder direkt:"
+            echo "**Download, kleine Fassung ($(du -h boom2-local-klein.apk | cut -f1))** -"
+            echo "nimm diese, sie laedt auf dem Handy am zuverlaessigsten:"
+            echo "<https://github.com/${GITHUB_REPOSITORY}/releases/latest/download/boom2-local-klein.apk>"
+            echo
+            echo "Unveraenderte Fassung ($(du -h boom2-local.apk | cut -f1)), falls die kleine"
+            echo "sich merkwuerdig verhaelt - sie ist nicht durch R8 gegangen:"
             echo "<https://github.com/${GITHUB_REPOSITORY}/releases/latest/download/boom2-local.apk>"
             echo
-            echo "Pruefsumme in \`boom2-local.apk.sha256\`."
+            echo "Beide sind mit demselben Schluessel signiert und ersetzen einander beim"
+            echo "Installieren. Pruefsummen in \`boom2-local.sha256\`."
             echo "Auf dem Handy oeffnen und die Installation aus unbekannter Quelle bestaetigen."
             echo
             echo "Die Boom 2 muss vorher in den Android-Bluetooth-Einstellungen gekoppelt sein -"
@@ -116,7 +127,7 @@ jobs:
             echo "- Signiert mit einem Debug-Schluessel, der zwischen den CI-Laeufen erhalten"
             echo "  bleibt: ein neuerer Build installiert sich als Update darueber."
           } > release-notes.md
-          sha256sum boom2-local.apk > boom2-local.apk.sha256
+          sha256sum boom2-local.apk boom2-local-klein.apk > boom2-local.sha256
           # Not a prerelease: that is what makes /releases/latest/download work and puts
           # the APK on the repository's front page. The notes carry the honesty instead.
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
@@ -127,15 +138,17 @@ jobs:
               --title "Boom2 Local - Entwicklungsstand" \
               --notes-file release-notes.md --latest --target "$GITHUB_SHA"
           fi
-          gh release upload "$TAG" boom2-local.apk boom2-local.apk.sha256 \
-            --repo "$GITHUB_REPOSITORY" --clobber
+          gh release upload "$TAG" boom2-local.apk boom2-local-klein.apk \
+            boom2-local.sha256 --repo "$GITHUB_REPOSITORY" --clobber
           echo "Direkter Download:"
-          echo "https://github.com/$GITHUB_REPOSITORY/releases/download/$TAG/boom2-local.apk"
+          echo "https://github.com/$GITHUB_REPOSITORY/releases/latest/download/boom2-local-klein.apk"
           echo "https://github.com/$GITHUB_REPOSITORY/releases/latest/download/boom2-local.apk"
-          echo "SHA256: $(cat boom2-local.apk.sha256)"
+          cat boom2-local.sha256
 
       - uses: actions/upload-artifact@v4
         with:
           name: boom2-local-apk
-          path: soundcore-boom2-local/boom2-local.apk
+          path: |
+            soundcore-boom2-local/boom2-local.apk
+            soundcore-boom2-local/boom2-local-klein.apk
           if-no-files-found: error

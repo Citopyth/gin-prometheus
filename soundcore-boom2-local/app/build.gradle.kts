@@ -38,6 +38,10 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
             )
+            // Same key as the debug build. R8 shrinks this variant to a fraction of the
+            // size, which matters on a phone with a flaky connection, and sharing the
+            // key means it installs over the larger build instead of clashing with it.
+            signingConfig = signingConfigs.getByName("debug")
         }
     }
 
