@@ -228,6 +228,30 @@ fun ProtocolTab(state: UiState, model: Boom2ViewModel) {
         }
 
         item {
+            SectionCard(
+                "Sondierung",
+                "Schickt die Status-Abfrage einmal je Deutung des Laengenfelds und sagt, " +
+                    "auf welche die Box antwortet.",
+            ) {
+                Note(
+                    "Das Laengenfeld ist der einzige Teil des Rahmens, den keine Quelle " +
+                        "festnagelt. Eine Box, die die Verbindung annimmt und dann " +
+                        "schweigt, sieht genau so aus wie eine Box, die den Rahmen nicht " +
+                        "versteht. Zwei Pakete klaeren das.",
+                )
+                Button(
+                    onClick = { model.probeFraming() },
+                    enabled = connected && !state.probeBusy,
+                ) {
+                    Text(if (state.probeBusy) "Laeuft ..." else "Rahmen sondieren")
+                }
+                for (line in state.probeResult) {
+                    Note(line, warning = !line.contains("ANTWORT"))
+                }
+            }
+        }
+
+        item {
             SectionCard("Roh-Befehl senden") {
                 OutlinedTextField(
                     value = commandText,

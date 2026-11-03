@@ -36,6 +36,15 @@ class RfcommTransport(
     private val audit: AuditLog,
     /** Service UUIDs to try, best first; see DeviceFinder.resolveServiceUuids. */
     private val candidates: List<UuidCandidate>,
+    /**
+     * Overrides the profile's `insecureSocket` when set.
+     *
+     * An insecure socket skips authentication. Some vendor services only answer over an
+     * authenticated link, and a speaker that accepts the connection and then stays
+     * silent is exactly what that looks like from the outside, so it is worth being able
+     * to try the other one without editing the profile.
+     */
+    private val insecureOverride: Boolean? = null,
     private val clock: () -> Long = { System.currentTimeMillis() },
 ) : ControlTransport {
 
@@ -51,12 +60,24 @@ class RfcommTransport(
     private val _frames = MutableSharedFlow<Frame>(replay = 0, extraBufferCapacity = 64)
     override val frames: SharedFlow<Frame> = _frames.asSharedFlow()
 
+    private val _disconnects = MutableSharedFlow<String>(replay = 1, extraBufferCapacity = 4)
+    override val disconnects: SharedFlow<String> = _disconnects.asSharedFlow()
+
+    /**
+     * Set when the read loop ends. `BluetoothSocket.isConnected` keeps reporting true
+     * after the remote end hangs up, and a write into that socket can succeed locally,
+     * so without this the app reports sending commands into a dead link.
+     */
+    @Volatile
+    private var streamEnded = false
+
     @Volatile
     private var socket: BluetoothSocket? = null
 
     private var readJob: Job? = null
 
-    override val isConnected: Boolean get() = socket?.isConnected == true
+    override val isConnected: Boolean
+        get() = socket?.isConnected == true && !streamEnded
 
     /**
      * Opens the socket and reports which service answered.
@@ -78,12 +99,14 @@ class RfcommTransport(
             }
             closeSocket()
             splitter.reset()
+            streamEnded = false
             val rounds = profile.transport.connectAttempts.coerceAtLeast(1)
             var lastMessage: String? = null
             for (round in 1..rounds) {
+                val insecure = insecureOverride ?: profile.transport.insecureSocket
                 for (candidate in candidates) {
                     try {
-                        val created = if (profile.transport.insecureSocket) {
+                        val created = if (insecure) {
                             device.createInsecureRfcommSocketToServiceRecord(candidate.uuid)
                         } else {
                             device.createRfcommSocketToServiceRecord(candidate.uuid)
@@ -93,12 +116,14 @@ class RfcommTransport(
                         readJob = scope.launch { readLoop(created) }
                         audit.add(
                             AuditKind.INFO,
-                            "RFCOMM verbunden mit ${candidate.uuid} (Runde $round von $rounds)",
+                            "RFCOMM verbunden mit ${candidate.uuid} (Runde $round von " +
+                                "$rounds, ${if (insecure) "ohne" else "mit"} Authentifizierung)",
                             timestampMs = clock(),
                         )
                         return@withContext TransportTarget(
                             label = candidate.uuid.toString(),
-                            detail = "RFCOMM, ${candidate.origin}",
+                            detail = "RFCOMM ${if (insecure) "ohne" else "mit"} " +
+                                "Authentifizierung, ${candidate.origin}",
                         )
                     } catch (e: Exception) {
                         lastMessage = e.message ?: e.javaClass.simpleName
@@ -119,15 +144,30 @@ class RfcommTransport(
 
     /** Encodes, logs and writes one frame. */
     override suspend fun send(command: Command, payload: ByteArray) {
+        val frame = codec.encode(command, payload)
+        audit.add(
+            AuditKind.SENT,
+            "$command, ${payload.size} Byte Payload",
+            hex = Hex.encode(frame),
+            timestampMs = clock(),
+        )
+        write(frame)
+    }
+
+    override suspend fun sendFrame(raw: ByteArray) {
+        audit.add(
+            AuditKind.SENT,
+            "Roh-Frame, ${raw.size} Byte",
+            hex = Hex.encode(raw),
+            timestampMs = clock(),
+        )
+        write(raw)
+    }
+
+    private suspend fun write(frame: ByteArray) {
         withContext(Dispatchers.IO) {
+            if (streamEnded) throw IOException("Die Box hat die Verbindung bereits beendet")
             val active = socket ?: throw IOException("nicht verbunden")
-            val frame = codec.encode(command, payload)
-            audit.add(
-                AuditKind.SENT,
-                "$command, ${payload.size} Byte Payload",
-                hex = Hex.encode(frame),
-                timestampMs = clock(),
-            )
             val stream = active.outputStream
             stream.write(frame)
             stream.flush()
@@ -152,15 +192,18 @@ class RfcommTransport(
                     handle(event)
                 }
             }
-            audit.add(AuditKind.INFO, "Gegenseite hat den Datenstrom beendet", timestampMs = clock())
+            endStream("Die Box hat den Datenstrom beendet.")
         } catch (e: Exception) {
             // Closing the socket from close() lands here too; that is the normal way out.
-            audit.add(
-                AuditKind.INFO,
-                "Leseschleife beendet: ${e.message ?: e.javaClass.simpleName}",
-                timestampMs = clock(),
-            )
+            endStream("Leseschleife beendet: ${e.message ?: e.javaClass.simpleName}")
         }
+    }
+
+    private fun endStream(reason: String) {
+        if (streamEnded) return
+        streamEnded = true
+        audit.add(AuditKind.INFO, reason, timestampMs = clock())
+        _disconnects.tryEmit(reason)
     }
 
     private suspend fun handle(event: SplitEvent) {

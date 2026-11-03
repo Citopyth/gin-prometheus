@@ -68,6 +68,9 @@ class GattTransport(
     private val _frames = MutableSharedFlow<Frame>(replay = 0, extraBufferCapacity = 64)
     override val frames: SharedFlow<Frame> = _frames.asSharedFlow()
 
+    private val _disconnects = MutableSharedFlow<String>(replay = 1, extraBufferCapacity = 4)
+    override val disconnects: SharedFlow<String> = _disconnects.asSharedFlow()
+
     /** Inbound chunks, so the splitter is only ever touched by one coroutine. */
     private val inbound = Channel<ByteArray>(Channel.BUFFERED)
 
@@ -120,9 +123,11 @@ class GattTransport(
                 connectSignal?.complete(Unit)
                 return
             }
+            val wasReady = ready
             ready = false
             val message = "GATT-Verbindung beendet (status=$status, Zustand=$newState)"
             audit.add(AuditKind.INFO, message, timestampMs = clock())
+            if (wasReady) _disconnects.tryEmit(message)
             connectSignal?.completeExceptionally(IOException(message))
             discoverSignal?.complete(false)
             descriptorSignal?.complete(false)
@@ -339,8 +344,6 @@ class GattTransport(
     // --- send --------------------------------------------------------------------------
 
     override suspend fun send(command: Command, payload: ByteArray) {
-        val g = gatt ?: throw IOException("nicht verbunden")
-        val characteristic = writeCharacteristic ?: throw IOException("nicht verbunden")
         val frame = codec.encode(command, payload)
         audit.add(
             AuditKind.SENT,
@@ -348,6 +351,22 @@ class GattTransport(
             hex = Hex.encode(frame),
             timestampMs = clock(),
         )
+        write(frame)
+    }
+
+    override suspend fun sendFrame(raw: ByteArray) {
+        audit.add(
+            AuditKind.SENT,
+            "Roh-Frame, ${raw.size} Byte",
+            hex = Hex.encode(raw),
+            timestampMs = clock(),
+        )
+        write(raw)
+    }
+
+    private suspend fun write(frame: ByteArray) {
+        val g = gatt ?: throw IOException("nicht verbunden")
+        val characteristic = writeCharacteristic ?: throw IOException("nicht verbunden")
         writeLock.withLock {
             // Three bytes of every packet are ATT overhead.
             val chunkSize = (mtu - 3).coerceAtLeast(MIN_CHUNK)

@@ -328,6 +328,43 @@ private fun DeviceTab(
                     "uebrigen Standardprofile. Das stoert die Musikwiedergabe nicht, " +
                     "dauert aber laenger und fuehrt meist zu nichts.",
             )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Text("Handshake senden", style = MaterialTheme.typography.bodyMedium)
+                Switch(
+                    checked = state.useHandshake,
+                    onCheckedChange = { model.setUseHandshake(it) },
+                )
+            }
+            Note(
+                "Die Box nimmt die Verbindung an, antwortet aber nicht und legt nach " +
+                    "etwa einer halben Minute auf. Beim Soundcore Space 2 ist genau das " +
+                    "das Verhalten, solange der Client sich nicht begruesst hat. Dieser " +
+                    "Schalter sendet die dort dokumentierte Begruessung - sieben Pakete, " +
+                    "deren Bedeutung fuer die Boom 2 niemand kennt. Deshalb aus by " +
+                    "default: es sind Schreibzugriffe ins Unbekannte.",
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Text(
+                    "Verbindung authentifizieren",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Switch(
+                    checked = state.secureSocket,
+                    onCheckedChange = { model.setSecureSocket(it) },
+                )
+            }
+            Note(
+                "Normalerweise wird ein unauthentifizierter Socket benutzt, weil der mit " +
+                    "mehr Geraeten funktioniert. Manche Hersteller-Dienste antworten aber " +
+                    "nur ueber eine authentifizierte Verbindung - auch das sieht von " +
+                    "aussen aus wie eine Box, die schweigt.",
+            )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(
                     onClick = { model.connect() },

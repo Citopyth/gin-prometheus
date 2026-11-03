@@ -22,10 +22,13 @@ import de.privat.boom2local.protocol.DeviceProfile
 import de.privat.boom2local.protocol.Frame
 import de.privat.boom2local.protocol.GattService
 import de.privat.boom2local.protocol.Hex
+import de.privat.boom2local.protocol.LengthSemantics
+import de.privat.boom2local.protocol.PacketCodec
 import de.privat.boom2local.protocol.PolicyDecision
 import de.privat.boom2local.protocol.RawMode
 import de.privat.boom2local.protocol.StateDecoder
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -67,6 +70,12 @@ class UiState(
     /** Also try the standard Bluetooth profiles as connection targets. */
     val tryStandardProfiles: Boolean = false,
     val transport: TransportChoice = TransportChoice.AUTO,
+    /** Send the profile's handshake after connecting. Off by default: see the UI note. */
+    val useHandshake: Boolean = false,
+    /** Use an authenticated RFCOMM socket instead of the profile's insecure one. */
+    val secureSocket: Boolean = false,
+    val probeBusy: Boolean = false,
+    val probeResult: List<String> = emptyList(),
     /** GATT services seen on the last BLE attempt, successful or not. */
     val gattServices: List<GattService> = emptyList(),
     val message: String? = null,
@@ -209,6 +218,14 @@ class Boom2ViewModel(application: Application) : AndroidViewModel(application) {
         _ui.update { it.copyWith(tryStandardProfiles = value) }
     }
 
+    fun setUseHandshake(value: Boolean) {
+        _ui.update { it.copyWith(useHandshake = value) }
+    }
+
+    fun setSecureSocket(value: Boolean) {
+        _ui.update { it.copyWith(secureSocket = value) }
+    }
+
     fun setTransport(choice: TransportChoice) {
         audit.add(AuditKind.INFO, "Transportweg: $choice", timestampMs = now())
         _ui.update { it.copyWith(transport = choice, audit = audit.snapshot()) }
@@ -273,7 +290,13 @@ class Boom2ViewModel(application: Application) : AndroidViewModel(application) {
         // published description of this protocol is RFCOMM. BLE is the fallback, and the
         // only way to find out whether this model went the other way.
         val plan = mutableListOf<ControlTransport>()
-        fun rfcomm() = RfcommTransport(profile, audit, rfcommCandidates, ::now)
+        fun rfcomm() = RfcommTransport(
+            profile = profile,
+            audit = audit,
+            candidates = rfcommCandidates,
+            insecureOverride = if (state.secureSocket) false else null,
+            clock = ::now,
+        )
         fun gatt() = GattTransport(appContext, profile, audit, ::now)
         when (state.transport) {
             TransportChoice.RFCOMM -> plan += rfcomm()
@@ -298,7 +321,26 @@ class Boom2ViewModel(application: Application) : AndroidViewModel(application) {
             for (transport in plan) {
                 link = transport
                 val collector = viewModelScope.launch {
-                    transport.frames.collect { frame -> onFrame(frame) }
+                    launch { transport.frames.collect { frame -> onFrame(frame) } }
+                    launch {
+                        transport.disconnects.collect { reason ->
+                            _ui.update {
+                                if (it.link is LinkState.Connected) {
+                                    it.copyWith(
+                                        link = LinkState.Failed(
+                                            "Verbindung verloren: $reason\n\nDie Box hat die " +
+                                                "Verbindung angenommen und dann beendet, ohne zu " +
+                                                "antworten. Das passiert, wenn sie mit den " +
+                                                "gesendeten Bytes nichts anfangen kann.",
+                                        ),
+                                        audit = audit.snapshot(),
+                                    )
+                                } else {
+                                    it.copyWith(audit = audit.snapshot())
+                                }
+                            }
+                        }
+                    }
                 }
                 frameJob = collector
                 try {
@@ -360,6 +402,17 @@ class Boom2ViewModel(application: Application) : AndroidViewModel(application) {
 
     private suspend fun runHandshake(profile: DeviceProfile) {
         val active = link ?: return
+        if (!_ui.value.useHandshake) {
+            if (profile.framing.handshake.isNotEmpty()) {
+                audit.add(
+                    AuditKind.INFO,
+                    "Handshake uebersprungen (${profile.framing.handshake.size} Schritte " +
+                        "im Profil, Schalter steht auf aus)",
+                    timestampMs = now(),
+                )
+            }
+            return
+        }
         val policy = policy(profile)
         for (step in profile.framing.handshake) {
             when (val decision = policy.evaluateHandshake(step)) {
@@ -532,6 +585,69 @@ class Boom2ViewModel(application: Application) : AndroidViewModel(application) {
         rawMode = _ui.value.rawMode,
     )
 
+    /**
+     * Sends the state request under each length interpretation and reports which one the
+     * speaker answers.
+     *
+     * The length field is the one part of the framing that no source pins down, and a
+     * speaker that accepts the connection and then goes quiet is exactly what a frame it
+     * cannot parse looks like. Trying both costs two packets and settles it.
+     */
+    fun probeFraming() {
+        val state = _ui.value
+        val profile = state.profile ?: return
+        val transport = link
+        if (transport == null || !transport.isConnected) {
+            note("Nicht verbunden.")
+            return
+        }
+        _ui.update { it.copyWith(probeBusy = true, probeResult = emptyList()) }
+        viewModelScope.launch {
+            val results = mutableListOf<String>()
+            for (semantics in LengthSemantics.entries) {
+                val codec = PacketCodec(
+                    outboundHeader = Hex.decode(profile.framing.outboundHeader),
+                    inboundHeader = Hex.decode(profile.framing.inboundHeader),
+                    lengthSemantics = semantics,
+                    maxFrameSize = profile.framing.maxFrameSize,
+                )
+                val frame = codec.encode(profile.stateRequestCommand)
+                val before = audit.count(AuditKind.RECEIVED)
+                audit.add(
+                    AuditKind.INFO,
+                    "Sondierung: Laengenfeld als $semantics gedeutet",
+                    timestampMs = now(),
+                )
+                try {
+                    transport.sendFrame(frame)
+                } catch (e: Exception) {
+                    results += "$semantics: Senden fehlgeschlagen (${e.message})"
+                    break
+                }
+                delay(PROBE_WAIT_MS)
+                val answered = audit.count(AuditKind.RECEIVED) - before
+                results += if (answered > 0) {
+                    "$semantics: ANTWORT, $answered Paket(e) - das ist die richtige Deutung."
+                } else {
+                    "$semantics: keine Antwort."
+                }
+                _ui.update { it.copyWith(audit = audit.snapshot(), probeResult = results.toList()) }
+            }
+            if (results.none { it.contains("ANTWORT") }) {
+                results += "Keine Deutung brachte eine Antwort. Dann stimmt etwas anderes " +
+                    "nicht: Header-Bytes, Pruefsumme, oder die Box erwartet zuerst einen " +
+                    "Handshake."
+            }
+            _ui.update {
+                it.copyWith(
+                    probeBusy = false,
+                    probeResult = results.toList(),
+                    audit = audit.snapshot(),
+                )
+            }
+        }
+    }
+
     // --- diagnostics ------------------------------------------------------------------
 
     fun analyzeCapture(hexText: String) {
@@ -585,6 +701,11 @@ class Boom2ViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun now(): Long = System.currentTimeMillis()
+
+    private companion object {
+        /** How long to wait for an answer before calling a framing variant dead. */
+        const val PROBE_WAIT_MS = 3_000L
+    }
 }
 
 /**
@@ -610,6 +731,10 @@ private fun UiState.copyWith(
     sdpNote: String? = this.sdpNote,
     tryStandardProfiles: Boolean = this.tryStandardProfiles,
     transport: TransportChoice = this.transport,
+    useHandshake: Boolean = this.useHandshake,
+    secureSocket: Boolean = this.secureSocket,
+    probeBusy: Boolean = this.probeBusy,
+    probeResult: List<String> = this.probeResult,
     gattServices: List<GattService> = this.gattServices,
     message: String? = this.message,
 ): UiState = UiState(
@@ -631,6 +756,10 @@ private fun UiState.copyWith(
     sdpNote = sdpNote,
     tryStandardProfiles = tryStandardProfiles,
     transport = transport,
+    useHandshake = useHandshake,
+    secureSocket = secureSocket,
+    probeBusy = probeBusy,
+    probeResult = probeResult,
     gattServices = gattServices,
     message = message,
 )

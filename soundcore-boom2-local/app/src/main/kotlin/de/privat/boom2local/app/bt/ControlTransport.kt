@@ -24,11 +24,28 @@ interface ControlTransport {
 
     val frames: SharedFlow<Frame>
 
+    /**
+     * Emits once when the link goes away on its own.
+     *
+     * Without this a dropped connection is invisible until the next write, and writes
+     * into a dead socket can still appear to succeed — so the app would happily report
+     * sending commands to a speaker that hung up minutes ago.
+     */
+    val disconnects: SharedFlow<String>
+
     val isConnected: Boolean
 
     suspend fun connect(device: BluetoothDevice): TransportTarget
 
     suspend fun send(command: Command, payload: ByteArray)
+
+    /**
+     * Writes bytes that are already framed.
+     *
+     * Only for probing the framing itself: [send] always encodes with the profile's
+     * codec, which is no use when the question is whether that codec is right.
+     */
+    suspend fun sendFrame(raw: ByteArray)
 
     /** Drops the connection but keeps the object usable for inspection. */
     fun close()

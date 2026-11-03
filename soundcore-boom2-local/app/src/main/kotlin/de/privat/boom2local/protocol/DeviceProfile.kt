@@ -105,6 +105,13 @@ data class DeviceProfile(
         for (spec in blockedCommands) {
             check("blockedCommands['$spec']") { Command.parse(spec) }
         }
+        for ((index, step) in framing.handshake.withIndex()) {
+            check("framing.handshake[$index].command") { Command.parse(step.command) }
+            check("framing.handshake[$index].payload") { Hex.decode(step.payload) }
+            if (step.delayMsAfter < 0) {
+                problems += "framing.handshake[$index]: negative delayMsAfter"
+            }
+        }
         if (maxRawPayloadBytes < 0) problems += "maxRawPayloadBytes is negative"
         val keys = mutableSetOf<String>()
         for (spec in commands) {

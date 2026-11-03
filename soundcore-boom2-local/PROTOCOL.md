@@ -39,6 +39,25 @@ steht dort nicht.
 das `0cf12d31-fac3-4553-bd80-d6832e7d3138`, wenn die Boom 2 wirklich A3138 ist (das ist
 eine unbestaetigte Nutzerangabe in Q3).
 
+**Bestaetigt am Geraet (2026-11-03):** die Boom 2 bietet per SDP den Dienst
+`0cf12d31-fac3-4553-bd80-d6832e7b3138` an und nimmt eine RFCOMM-Verbindung darauf im
+ersten Versuch an. Das ist die erste harte Protokoll-Tatsache zur Boom 2 aus dieser
+Arbeit. Nebenbei bestaetigt sie die Modellnummer **A3138**, die in Q3 nur eine
+unbelegte Nutzerangabe war - die letzten vier Stellen der UUID sind die Modellnummer,
+wie beim Space 2 (D1402 -> `…1402`).
+
+Das Byte davor unterscheidet sich aber: Space 2 `…2e7d1402`, Boom 2 `…2e7b3138`. Es ist
+also **nicht** der Modellbuchstabe ('D' = 0x44, 'A' = 0x41). Das gemeinsame Praefix
+reicht damit nur bis `0cf12d31-fac3-4553-bd80-d6832e`; was `7d` und `7b` bedeuten, ist
+offen. Mein urspruengliches Praefix war ein Zeichen zu lang und hat die Box deshalb
+nicht erkannt.
+
+**Was weiterhin nicht geht:** auf `01 01` kommt keine Antwort. Die Box nimmt die
+Verbindung an, schweigt und beendet den Datenstrom nach rund 27 Sekunden. Beim Space 2
+ist genau das das dokumentierte Verhalten **vor** dem Handshake (Q4), was ihn zum
+naechsten Verdacht macht; die zweite offene Moeglichkeit ist die Deutung des
+Laengenfelds. Beides laesst sich in der App ausprobieren.
+
 **Widerlegt am Geraet (2026-11-03):** ein erster Verbindungsversuch mit einer echten
 Boom 2 schlug ueber alle drei Rueckfall-Kandidaten fehl, mit
 `read failed, socket might closed or timeout, read ret: -1` — dem Android-Fehler fuer
@@ -156,7 +175,10 @@ im Experten-Modus gesperrt bleibt.
 - **Belegt und getestet:** Transport (RFCOMM), Vendor-UUID-Schema, Rahmenaufbau in der
   Struktur, `01 01` als Zustandsabfrage, Firmware-Offset der Boom 2.
 - **Gemeldet, plausibel, ungeprueft:** alle uebrigen Offsets und alle Schreibbefehle.
-- **Widerlegt:** `0cf12d31-…-d6832e7d3138` als UUID der Boom 2 (siehe oben).
+- **Am Geraet bestaetigt:** Dienst-UUID `0cf12d31-fac3-4553-bd80-d6832e7b3138`,
+  Modellnummer A3138, RFCOMM als Transport.
+- **Widerlegt:** `0cf12d31-…-d6832e7d3138` als UUID der Boom 2, und damit die Annahme,
+  das Byte vor der Modellnummer sei fuer alle Soundcore-Geraete gleich.
 - **Hypothese:** das UUID-Schema als solches, `body[0]` als Akku-Prozent.
 - **Unbekannt:** Laengenfeld-Semantik, Handshake, OTA-Befehle, Zuordnung der
   EQ-Voreinstellungs-IDs zu Namen.

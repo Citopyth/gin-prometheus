@@ -2,7 +2,7 @@
   "profileVersion": 1,
   "id": "soundcore-boom-2",
   "displayName": "Soundcore Boom 2",
-  "model": "A3138 (unbestaetigt)",
+  "model": "A3138 (durch die Dienst-UUID der Box bestaetigt)",
   "match": {
     "namePatterns": [
       "soundcore boom 2",
@@ -11,8 +11,9 @@
     "requireBonded": true
   },
   "transport": {
-    "uuidPrefix": "0cf12d31-fac3-4553-bd80-d6832e7d",
+    "uuidPrefix": "0cf12d31-fac3-4553-bd80-d6832e",
     "fallbackUuids": [
+      "0cf12d31-fac3-4553-bd80-d6832e7b3138",
       "0cf12d31-fac3-4553-bd80-d6832e7d3138",
       "0cf12d31-fac3-4553-bd80-d6832e7d5100",
       "0cf12d31-fac3-4553-bd80-d6832e7d1402"
@@ -37,7 +38,50 @@
     "inboundHeader": "09 ff 00 00 01",
     "lengthSemantics": "TOTAL",
     "maxFrameSize": 2048,
-    "handshake": []
+    "handshake": [
+      {
+        "command": "01 01",
+        "payload": "",
+        "delayMsAfter": 200,
+        "note": "Space-2-Handshake, Schritt 1 von 7 (Quelle Q4). Fuer die Boom 2 unbestaetigt."
+      },
+      {
+        "command": "05 01",
+        "payload": "01",
+        "delayMsAfter": 200,
+        "note": "Schritt 2"
+      },
+      {
+        "command": "05 81",
+        "payload": "",
+        "delayMsAfter": 200,
+        "note": "Schritt 3"
+      },
+      {
+        "command": "05 81",
+        "payload": "",
+        "delayMsAfter": 200,
+        "note": "Schritt 4"
+      },
+      {
+        "command": "05 81",
+        "payload": "01",
+        "delayMsAfter": 200,
+        "note": "Schritt 5"
+      },
+      {
+        "command": "05 81",
+        "payload": "",
+        "delayMsAfter": 200,
+        "note": "Schritt 6"
+      },
+      {
+        "command": "18 85",
+        "payload": "01",
+        "delayMsAfter": 300,
+        "note": "Schritt 7"
+      }
+    ]
   },
   "state": {
     "requestCommand": "01 01",
@@ -305,6 +349,8 @@
     "Jeder Byte-Offset und jeder Befehlscode hier ist reverse-engineered und fuer die Boom 2 noch unbestaetigt. Quellen und Verifikationsstand stehen in PROTOCOL.md.",
     "blockedCommands ist leer, weil kein Firmware-/OTA-Befehl der Boom 2 bekannt ist. Das ist keine Luecke: alles, was nicht in commands steht, wird ohnehin nicht gesendet (Default-Deny). Sobald ein Mitschnitt einen OTA-Befehl zeigt, gehoert er hier hinein - dann ist er auch im Experten-Modus gesperrt.",
     "handshake ist leer. Beim Space 2 verwirft das Geraet Schreibzugriffe bis zu einem Handshake. Falls die Boom 2 Schreibzugriffe ignoriert, zeigt ein Mitschnitt der Original-App die noetigen Schritte.",
-    "Der BLE-Pfad waehlt den Steuerdienst selbst: ein nicht-standardisierter GATT-Dienst mit je einer beschreibbaren und einer meldenden Eigenschaft. serviceUuids bleibt leer, bis ein Mitschnitt den richtigen Dienst zeigt - dann hier eintragen. blockedServiceUuids sperrt Nordic Secure DFU und das aeltere DFU-Profil, also die Dienste, ueber die Firmware uebertragen wird; die Liste ist nicht vollstaendig, und ein als Updater erkannter Dienst gehoert ebenfalls hinein."
+    "Der BLE-Pfad waehlt den Steuerdienst selbst: ein nicht-standardisierter GATT-Dienst mit je einer beschreibbaren und einer meldenden Eigenschaft. serviceUuids bleibt leer, bis ein Mitschnitt den richtigen Dienst zeigt - dann hier eintragen. blockedServiceUuids sperrt Nordic Secure DFU und das aeltere DFU-Profil, also die Dienste, ueber die Firmware uebertragen wird; die Liste ist nicht vollstaendig, und ein als Updater erkannter Dienst gehoert ebenfalls hinein.",
+    "Die Dienst-UUID 0cf12d31-fac3-4553-bd80-d6832e7b3138 wurde am 2026-11-03 an einer echten Boom 2 bestaetigt: die Box bietet sie per SDP an und nimmt die Verbindung darauf an. uuidPrefix endet deshalb auf ...d6832e statt ...d6832e7d - die Boom 2 hat 7b, die Space 2 hat 7d, mein urspruengliches Praefix war ein Zeichen zu lang.",
+    "framing.handshake enthaelt die beim Space 2 dokumentierte Begruessung (Quelle Q4). Sie ist fuer die Boom 2 unbestaetigt und wird nur gesendet, wenn du den Schalter 'Handshake senden' einschaltest. Hintergrund: die Box nimmt die Verbindung an, antwortet aber nicht und legt nach rund 27 Sekunden auf - beim Space 2 ist genau das das Verhalten vor dem Handshake."
   ]
 }

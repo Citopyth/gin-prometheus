@@ -118,6 +118,52 @@ class ProfileFileTest {
     }
 
     @Test
+    fun `the confirmed service uuid comes first and the prefix matches it`() {
+        val confirmed = "0cf12d31-fac3-4553-bd80-d6832e7b3138"
+        assertEquals(confirmed, profile.transport.fallbackUuids.first())
+        assertTrue(
+            confirmed.startsWith(profile.transport.uuidPrefix),
+            "the prefix must match the UUID the device actually advertises",
+        )
+        // The Space 2's UUID differs in the byte before the model number, so a prefix
+        // that includes that byte would not match both.
+        assertTrue(
+            "0cf12d31-fac3-4553-bd80-d6832e7d1402".startsWith(profile.transport.uuidPrefix),
+        )
+    }
+
+    @Test
+    fun `the handshake parses and stays opt-in`() {
+        // Present in the profile so it is documented and auditable, but every step is a
+        // write of unknown meaning, so the app only sends it when asked.
+        assertEquals(7, profile.framing.handshake.size)
+        for (step in profile.framing.handshake) {
+            Command.parse(step.command)
+            Hex.decode(step.payload)
+            assertTrue(step.delayMsAfter >= 0)
+        }
+        assertEquals(Command(0x01, 0x01), Command.parse(profile.framing.handshake.first().command))
+    }
+
+    @Test
+    fun `a malformed handshake step is caught at load time`() {
+        val broken = profile.copy(
+            framing = profile.framing.copy(
+                handshake = listOf(HandshakeStep(command = "nonsense", payload = "zz")),
+            ),
+        )
+        val problems = broken.validate()
+        assertTrue(
+            problems.any { it.contains("handshake[0].command") },
+            problems.toString(),
+        )
+        assertTrue(
+            problems.any { it.contains("handshake[0].payload") },
+            problems.toString(),
+        )
+    }
+
+    @Test
     fun `the blocklist is empty but documented`() {
         assertEquals(emptyList(), profile.blockedCommands)
         assertTrue(
