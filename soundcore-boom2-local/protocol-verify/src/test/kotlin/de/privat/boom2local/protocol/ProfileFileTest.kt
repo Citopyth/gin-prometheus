@@ -163,6 +163,31 @@ class ProfileFileTest {
         )
     }
 
+    /**
+     * The notes are what the app shows as its own account of what is and is not known,
+     * so a note that contradicts the data is worse than no note. This pins the two
+     * claims that have actually gone stale rather than trying to police prose in
+     * general: a note once said the handshake was empty after seven steps were added.
+     */
+    @Test
+    fun `the notes do not contradict the data`() {
+        val notes = profile.notes.joinToString(" ").lowercase()
+        if (profile.framing.handshake.isNotEmpty()) {
+            assertTrue(
+                !notes.contains("handshake ist leer"),
+                "the profile carries ${profile.framing.handshake.size} handshake steps " +
+                    "but a note still claims there are none",
+            )
+            assertTrue(notes.contains("handshake"), "a non-empty handshake needs explaining")
+        }
+        if (profile.blockedCommands.isEmpty()) {
+            assertTrue(
+                notes.contains("blockedcommands ist leer"),
+                "an empty blocklist needs explaining",
+            )
+        }
+    }
+
     @Test
     fun `the blocklist is empty but documented`() {
         assertEquals(emptyList(), profile.blockedCommands)
