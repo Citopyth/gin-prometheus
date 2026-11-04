@@ -47,9 +47,9 @@ import androidx.compose.ui.unit.dp
 import de.privat.boom2local.app.Boom2ViewModel
 import de.privat.boom2local.app.LinkState
 import de.privat.boom2local.app.SelfCheck
-import de.privat.boom2local.app.TransportChoice
 import de.privat.boom2local.app.UiState
 import de.privat.boom2local.protocol.GattSelector
+import de.privat.boom2local.protocol.TransportPreference
 
 private val TabTitles = listOf("Geraet", "Steuern", "Protokoll", "Sicherheit")
 
@@ -265,16 +265,16 @@ private fun DeviceTab(
             }
             Text("Transportweg", style = MaterialTheme.typography.bodyMedium)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                for (choice in TransportChoice.entries) {
+                for (choice in TransportPreference.entries) {
                     FilterChip(
                         selected = state.transport == choice,
                         onClick = { model.setTransport(choice) },
                         label = {
                             Text(
                                 when (choice) {
-                                    TransportChoice.AUTO -> "automatisch"
-                                    TransportChoice.RFCOMM -> "RFCOMM"
-                                    TransportChoice.BLE -> "BLE"
+                                    TransportPreference.AUTO -> "automatisch"
+                                    TransportPreference.RFCOMM -> "RFCOMM"
+                                    TransportPreference.BLE -> "BLE"
                                 },
                             )
                         },

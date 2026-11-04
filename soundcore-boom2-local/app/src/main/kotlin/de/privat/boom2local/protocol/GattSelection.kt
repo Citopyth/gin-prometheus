@@ -48,8 +48,8 @@ sealed interface GattSelection {
  */
 object GattSelector {
 
-    /** Registered Bluetooth services all end in this. */
-    const val BLUETOOTH_BASE_SUFFIX = "-0000-1000-8000-00805f9b34fb"
+    /** Registered Bluetooth services all end in this. Same rule as for RFCOMM. */
+    const val BLUETOOTH_BASE_SUFFIX = ServiceCandidates.BLUETOOTH_BASE_SUFFIX
 
     /**
      * Standard services that cannot be the vendor control channel. Generic Access,
@@ -62,7 +62,7 @@ object GattSelector {
         "0000180f$BLUETOOTH_BASE_SUFFIX",
     )
 
-    fun isCustom(uuid: String): Boolean = !uuid.lowercase().endsWith(BLUETOOTH_BASE_SUFFIX)
+    fun isCustom(uuid: String): Boolean = ServiceCandidates.isCustom(uuid)
 
     fun select(services: List<GattService>, spec: BleSpec): GattSelection {
         val notes = mutableListOf<String>()

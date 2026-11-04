@@ -13,6 +13,7 @@ import android.os.Build
 import android.os.ParcelUuid
 import androidx.core.content.ContextCompat
 import de.privat.boom2local.protocol.DeviceProfile
+import de.privat.boom2local.protocol.ServiceCandidates
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.withTimeoutOrNull
 import java.util.UUID
@@ -38,15 +39,10 @@ class FoundDevice(
      * the profile's vendor prefix: that prefix is a guess from other models, while this
      * is a property of the service itself.
      */
-    val customUuids: List<String> = allUuids.filterNot { it.endsWith(BLUETOOTH_BASE_SUFFIX) }
+    val customUuids: List<String> = allUuids.filter { ServiceCandidates.isCustom(it) }
 
     /** The standard Serial Port Profile, a common fallback for vendor protocols. */
-    val sppUuid: String? = allUuids.firstOrNull { it.startsWith("00001101") }
-
-    companion object {
-        /** Registered Bluetooth profile UUIDs all end in this. */
-        const val BLUETOOTH_BASE_SUFFIX = "-0000-1000-8000-00805f9b34fb"
-    }
+    val sppUuid: String? = allUuids.firstOrNull { ServiceCandidates.isSerialPort(it) }
 }
 
 /** Outcome of a fresh SDP query. */
@@ -198,48 +194,23 @@ class DeviceFinder(private val context: Context) {
     /**
      * Every RFCOMM service worth trying, best first.
      *
-     * Order matters, and it puts what the device actually says ahead of what the profile
-     * guesses:
-     *
-     *  1. a service matching the profile's vendor prefix — a guess confirmed by the device
-     *  2. every other non-standard service the device advertises — real, and the only
-     *     place a proprietary protocol can live
-     *  3. the profile's fallback candidates — pure guesses from other models
-     *  4. Serial Port Profile, if offered
-     *  5. with [includeStandardProfiles], the registered profiles too, as a last resort
+     * The ordering itself lives in [ServiceCandidates], where it is unit tested; this
+     * only turns the result into the UUID type Android wants.
      */
     fun resolveServiceUuids(
         found: FoundDevice,
         profile: DeviceProfile,
         includeStandardProfiles: Boolean = false,
-    ): List<UuidChoice> {
-        val choices = mutableListOf<UuidChoice>()
-        val seen = mutableSetOf<UUID>()
-
-        fun add(text: String, origin: String) {
+    ): List<UuidChoice> = ServiceCandidates
+        .order(found.allUuids, profile.transport, includeStandardProfiles)
+        .mapNotNull { candidate ->
             val uuid = try {
-                UUID.fromString(text)
+                UUID.fromString(candidate.uuid)
             } catch (e: IllegalArgumentException) {
-                return
+                null
             }
-            if (seen.add(uuid)) choices += UuidChoice(uuid, origin)
+            uuid?.let { UuidChoice(it, candidate.origin) }
         }
-
-        found.vendorUuid?.let { add(it, "Dienst der Box, passt zum Hersteller-Praefix") }
-        for (uuid in found.customUuids) {
-            add(uuid, "herstellerspezifischer Dienst der Box")
-        }
-        for (candidate in profile.transport.fallbackUuids) {
-            add(candidate, "Rueckfall-Kandidat aus dem Profil (geraten)")
-        }
-        found.sppUuid?.let { add(it, "serieller Standarddienst (SPP) der Box") }
-        if (includeStandardProfiles) {
-            for (uuid in found.allUuids) {
-                add(uuid, "Standardprofil der Box (letzter Versuch)")
-            }
-        }
-        return choices
-    }
 
     class UuidChoice(val uuid: UUID, val origin: String)
 }

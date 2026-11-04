@@ -17,6 +17,7 @@ import de.privat.boom2local.protocol.CaptureValidator
 import de.privat.boom2local.protocol.Command
 import de.privat.boom2local.protocol.CommandPolicy
 import de.privat.boom2local.protocol.CommandSpec
+import de.privat.boom2local.protocol.ConnectionPlan
 import de.privat.boom2local.protocol.DecodedState
 import de.privat.boom2local.protocol.DeviceProfile
 import de.privat.boom2local.protocol.Frame
@@ -27,6 +28,8 @@ import de.privat.boom2local.protocol.PacketCodec
 import de.privat.boom2local.protocol.PolicyDecision
 import de.privat.boom2local.protocol.RawMode
 import de.privat.boom2local.protocol.StateDecoder
+import de.privat.boom2local.protocol.TransportKind
+import de.privat.boom2local.protocol.TransportPreference
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -34,9 +37,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-
-/** Which pipe to carry the frames over. */
-enum class TransportChoice { AUTO, RFCOMM, BLE }
 
 /** Where the Bluetooth link currently stands. */
 sealed interface LinkState {
@@ -69,7 +69,7 @@ class UiState(
     val sdpNote: String? = null,
     /** Also try the standard Bluetooth profiles as connection targets. */
     val tryStandardProfiles: Boolean = false,
-    val transport: TransportChoice = TransportChoice.AUTO,
+    val transport: TransportPreference = TransportPreference.AUTO,
     /** Send the profile's handshake after connecting. Off by default: see the UI note. */
     val useHandshake: Boolean = false,
     /** Use an authenticated RFCOMM socket instead of the profile's insecure one. */
@@ -226,7 +226,7 @@ class Boom2ViewModel(application: Application) : AndroidViewModel(application) {
         _ui.update { it.copyWith(secureSocket = value) }
     }
 
-    fun setTransport(choice: TransportChoice) {
+    fun setTransport(choice: TransportPreference) {
         audit.add(AuditKind.INFO, "Transportweg: $choice", timestampMs = now())
         _ui.update { it.copyWith(transport = choice, audit = audit.snapshot()) }
     }
@@ -289,29 +289,30 @@ class Boom2ViewModel(application: Application) : AndroidViewModel(application) {
         // Classic first when the speaker advertises anything usable, because every
         // published description of this protocol is RFCOMM. BLE is the fallback, and the
         // only way to find out whether this model went the other way.
-        val plan = mutableListOf<ControlTransport>()
-        fun rfcomm() = RfcommTransport(
-            profile = profile,
-            audit = audit,
-            candidates = rfcommCandidates,
-            insecureOverride = if (state.secureSocket) false else null,
-            clock = ::now,
+        val order = ConnectionPlan.plan(
+            preference = state.transport,
+            rfcommCandidates = rfcommCandidates.size,
+            bleEnabled = profile.ble.enabled,
         )
-        fun gatt() = GattTransport(appContext, profile, audit, ::now)
-        when (state.transport) {
-            TransportChoice.RFCOMM -> plan += rfcomm()
-            TransportChoice.BLE -> plan += gatt()
-            TransportChoice.AUTO -> {
-                if (rfcommCandidates.isNotEmpty()) plan += rfcomm()
-                if (profile.ble.enabled) plan += gatt()
-            }
-        }
-        if (plan.isEmpty()) {
+        if (order.isEmpty()) {
             note(
-                "Kein Transportweg uebrig: die Box bietet keinen RFCOMM-Dienst an und BLE " +
-                    "ist im Profil abgeschaltet.",
+                "Kein Transportweg uebrig. " +
+                    ConnectionPlan.whyEmpty(rfcommCandidates.size, profile.ble.enabled),
             )
             return
+        }
+        val plan = order.map { kind ->
+            when (kind) {
+                TransportKind.RFCOMM -> RfcommTransport(
+                    profile = profile,
+                    audit = audit,
+                    candidates = rfcommCandidates,
+                    insecureOverride = if (state.secureSocket) false else null,
+                    clock = ::now,
+                )
+
+                TransportKind.BLE -> GattTransport(appContext, profile, audit, ::now)
+            }
         }
 
         disconnect()
@@ -730,7 +731,7 @@ private fun UiState.copyWith(
     sdpBusy: Boolean = this.sdpBusy,
     sdpNote: String? = this.sdpNote,
     tryStandardProfiles: Boolean = this.tryStandardProfiles,
-    transport: TransportChoice = this.transport,
+    transport: TransportPreference = this.transport,
     useHandshake: Boolean = this.useHandshake,
     secureSocket: Boolean = this.secureSocket,
     probeBusy: Boolean = this.probeBusy,
