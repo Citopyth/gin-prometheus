@@ -15,6 +15,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
+import de.privat.boom2local.protocol.ServiceRisk
 
 @Composable
 fun SectionCard(
@@ -101,4 +102,20 @@ fun Note(text: String, warning: Boolean = false) {
             MaterialTheme.colorScheme.onSurfaceVariant
         },
     )
+}
+
+/** Names what a Bluetooth service is for, and whether it reaches further than audio. */
+@Composable
+fun RiskTag(risk: ServiceRisk) {
+    val (label, warning) = when (risk) {
+        ServiceRisk.MUSIC -> "Musik" to false
+        ServiceRisk.REMOTE -> "Fernbedienung" to false
+        ServiceRisk.HOUSEKEEPING -> "Geraeteinfo" to false
+        ServiceRisk.VENDOR -> "Hersteller" to false
+        ServiceRisk.MICROPHONE -> "Mikrofon" to true
+        ServiceRisk.PERSONAL_DATA -> "Daten vom Handy" to true
+        ServiceRisk.NETWORK -> "Netzwerk" to true
+        ServiceRisk.UNKNOWN -> "unbekannt" to true
+    }
+    Tag(label, warning = warning)
 }

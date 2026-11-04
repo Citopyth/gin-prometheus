@@ -44,6 +44,8 @@ class CommandBytesTest {
             "lightOn" to "08 ee 00 00 00 0e 08 0b 00 00 17",
             "lightBrightness" to "08 ee 00 00 00 0e 05 0b 00 80 94",
             "lightMode" to "08 ee 00 00 00 0e 07 0b 00 00 16",
+            "pairedDevices1" to "08 ee 00 00 00 0b 01 0a 00 0c",
+            "pairedDevices2" to "08 ee 00 00 00 0b 02 0a 00 0d",
         )
         assertEquals(
             expected.keys,

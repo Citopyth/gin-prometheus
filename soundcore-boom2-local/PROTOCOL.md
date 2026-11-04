@@ -131,6 +131,16 @@ Die Firmware-Zeile ist als Unit-Test hinterlegt: `StateDecoderTest` dekodiert ge
 Bytes aus Q2 und prueft, dass "05.00" herauskommt. Alles Synthetische im Testfixture ist
 dort als solches markiert.
 
+## Kopplungsliste
+
+**Gemeldet (Q4):** beim Space 2 liefern `0b:01` und `0b:02` Eintraege der
+Kopplungsliste, also welche Geraete die Box sonst noch kennt. Beide liegen in der
+Lese-Haelfte (`00..7f`) und sind im Profil als READ eingetragen, unbestaetigt.
+
+**Unbekannt:** ein Befehl, der einen Eintrag *entfernt*. Keine Quelle beschreibt einen.
+Wer die Liste leeren will, setzt die Box zurueck. Das ist kein Versaeumnis dieser App,
+sondern der Stand des oeffentlichen Wissens.
+
 ## Schreibende Befehle
 
 Alle **gemeldet (Q3)**, von der Boom 3i, keines an einer Boom 2 geprueft:

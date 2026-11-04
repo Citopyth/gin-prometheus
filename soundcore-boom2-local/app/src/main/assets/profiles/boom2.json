@@ -341,6 +341,24 @@
         }
       ],
       "verified": false
+    },
+    {
+      "key": "pairedDevices1",
+      "label": "Kopplungsliste lesen (1)",
+      "command": "0b 01",
+      "kind": "READ",
+      "payloadTemplate": "",
+      "verified": false,
+      "note": "Beim Space 2 liefert 0b:01 einen Eintrag der Kopplungsliste (Quelle Q4). Fuer die Boom 2 unbestaetigt. Nur lesend - es gibt keinen bekannten Befehl, mit dem sich ein fremdes Geraet aus der Box entfernen liesse."
+    },
+    {
+      "key": "pairedDevices2",
+      "label": "Kopplungsliste lesen (2)",
+      "command": "0b 02",
+      "kind": "READ",
+      "payloadTemplate": "",
+      "verified": false,
+      "note": "Zweiter Eintrag der Kopplungsliste beim Space 2 (Quelle Q4). Unbestaetigt."
     }
   ],
   "blockedCommands": [],
@@ -350,6 +368,7 @@
     "blockedCommands ist leer, weil kein Firmware-/OTA-Befehl der Boom 2 bekannt ist. Das ist keine Luecke: alles, was nicht in commands steht, wird ohnehin nicht gesendet (Default-Deny). Sobald ein Mitschnitt einen OTA-Befehl zeigt, gehoert er hier hinein - dann ist er auch im Experten-Modus gesperrt.",
     "framing.handshake enthaelt die sieben Schritte, die beim Soundcore Space 2 als Begruessung dokumentiert sind (Quelle Q4). Fuer die Boom 2 sind sie unbestaetigt, und sie werden nur gesendet, wenn der Schalter 'Handshake senden' eingeschaltet ist - es sind Schreibzugriffe, deren Bedeutung auf diesem Modell niemand kennt. Anlass: die Box nimmt die Verbindung an, antwortet nicht und legt nach rund 27 Sekunden auf; beim Space 2 ist genau das das Verhalten vor dem Handshake.",
     "Der BLE-Pfad waehlt den Steuerdienst selbst: ein nicht-standardisierter GATT-Dienst mit je einer beschreibbaren und einer meldenden Eigenschaft. serviceUuids bleibt leer, bis ein Mitschnitt den richtigen Dienst zeigt - dann hier eintragen. blockedServiceUuids sperrt Nordic Secure DFU und das aeltere DFU-Profil, also die Dienste, ueber die Firmware uebertragen wird; die Liste ist nicht vollstaendig, und ein als Updater erkannter Dienst gehoert ebenfalls hinein.",
-    "Die Dienst-UUID 0cf12d31-fac3-4553-bd80-d6832e7b3138 wurde am 2026-11-03 an einer echten Boom 2 bestaetigt: die Box bietet sie per SDP an und nimmt die Verbindung darauf an. uuidPrefix endet deshalb auf ...d6832e statt ...d6832e7d - die Boom 2 hat 7b, die Space 2 hat 7d, mein urspruengliches Praefix war ein Zeichen zu lang."
+    "Die Dienst-UUID 0cf12d31-fac3-4553-bd80-d6832e7b3138 wurde am 2026-11-03 an einer echten Boom 2 bestaetigt: die Box bietet sie per SDP an und nimmt die Verbindung darauf an. uuidPrefix endet deshalb auf ...d6832e statt ...d6832e7d - die Boom 2 hat 7b, die Space 2 hat 7d, mein urspruengliches Praefix war ein Zeichen zu lang.",
+    "Die Lesebefehle 0b:01 und 0b:02 sollen beim Space 2 die Kopplungsliste der Box zeigen, also welche Geraete sie sonst noch kennt. Ein Befehl zum Loeschen eines Eintrags ist in keiner Quelle beschrieben - wer die Liste leeren will, muss die Box zuruecksetzen."
   ]
 }

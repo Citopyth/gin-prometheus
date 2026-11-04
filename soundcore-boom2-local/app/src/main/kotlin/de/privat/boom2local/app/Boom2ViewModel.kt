@@ -12,6 +12,7 @@ import de.privat.boom2local.app.bt.FoundDevice
 import de.privat.boom2local.protocol.AuditEntry
 import de.privat.boom2local.protocol.AuditKind
 import de.privat.boom2local.protocol.AuditLog
+import de.privat.boom2local.protocol.BluetoothServices
 import de.privat.boom2local.protocol.CaptureReport
 import de.privat.boom2local.protocol.CaptureValidator
 import de.privat.boom2local.protocol.Command
@@ -19,8 +20,10 @@ import de.privat.boom2local.protocol.CommandPolicy
 import de.privat.boom2local.protocol.CommandSpec
 import de.privat.boom2local.protocol.ConnectionPlan
 import de.privat.boom2local.protocol.DecodedState
+import de.privat.boom2local.protocol.DeviceGate
 import de.privat.boom2local.protocol.DeviceProfile
 import de.privat.boom2local.protocol.Frame
+import de.privat.boom2local.protocol.GateDecision
 import de.privat.boom2local.protocol.GattService
 import de.privat.boom2local.protocol.Hex
 import de.privat.boom2local.protocol.LengthSemantics
@@ -74,6 +77,8 @@ class UiState(
     val useHandshake: Boolean = false,
     /** Use an authenticated RFCOMM socket instead of the profile's insecure one. */
     val secureSocket: Boolean = false,
+    /** The speaker this app is bound to, if any. */
+    val pinnedAddress: String? = null,
     val probeBusy: Boolean = false,
     val probeResult: List<String> = emptyList(),
     /** GATT services seen on the last BLE attempt, successful or not. */
@@ -87,6 +92,7 @@ class Boom2ViewModel(application: Application) : AndroidViewModel(application) {
 
     private val audit = AuditLog(capacity = 800)
     private val store = ProfileStore(application)
+    private val pins = PinStore(application)
     private val finder = DeviceFinder(application)
 
     private val appContext: Context = application.applicationContext
@@ -114,6 +120,7 @@ class Boom2ViewModel(application: Application) : AndroidViewModel(application) {
                 permissionGranted = finder.hasConnectPermission(),
                 readOnly = it.readOnly,
                 rawMode = it.rawMode,
+                pinnedAddress = pins.read(),
                 arguments = defaults,
                 audit = audit.snapshot(),
             )
@@ -218,6 +225,27 @@ class Boom2ViewModel(application: Application) : AndroidViewModel(application) {
         _ui.update { it.copyWith(tryStandardProfiles = value) }
     }
 
+    /**
+     * Binds the app to the selected speaker.
+     *
+     * Names are a convenience; two speakers of the same model carry the same one. The
+     * address is exact.
+     */
+    fun pinSelected() {
+        val device = _ui.value.selected ?: run { note("Kein Geraet ausgewaehlt."); return }
+        pins.write(device.address)
+        audit.add(AuditKind.INFO, "App an ${device.address} gebunden", timestampMs = now())
+        _ui.update { it.copyWith(pinnedAddress = pins.read(), audit = audit.snapshot()) }
+        note("Gebunden an ${device.address}. Andere Geraete werden jetzt abgelehnt.")
+    }
+
+    fun unpin() {
+        pins.write(null)
+        audit.add(AuditKind.INFO, "Geraete-Bindung aufgehoben", timestampMs = now())
+        _ui.update { it.copyWith(pinnedAddress = null, audit = audit.snapshot()) }
+        note("Bindung aufgehoben.")
+    }
+
     fun setUseHandshake(value: Boolean) {
         _ui.update { it.copyWith(useHandshake = value) }
     }
@@ -238,10 +266,11 @@ class Boom2ViewModel(application: Application) : AndroidViewModel(application) {
             appendLine("Geraet: ${selected.name}")
             appendLine("Adresse: ${selected.address}")
             appendLine("Passt zum Profil: ${selected.matchesProfile}")
+            appendLine("Gebunden: ${_ui.value.pinnedAddress ?: "nein"}")
             appendLine("Dienste laut SDP: ${selected.allUuids.size}")
-            for (uuid in selected.allUuids) {
-                val kind = if (uuid in selected.customUuids) "herstellerspezifisch" else "Standardprofil"
-                appendLine("  $uuid  ($kind)")
+            for (described in BluetoothServices.describeAll(selected.allUuids)) {
+                appendLine("  ${described.uuid}")
+                appendLine("    ${described.name}  [${described.risk}]")
             }
             val gatt = _ui.value.gattServices
             if (gatt.isEmpty()) {
@@ -275,9 +304,27 @@ class Boom2ViewModel(application: Application) : AndroidViewModel(application) {
         val state = _ui.value
         val profile = state.profile ?: run { note("Kein brauchbares Profil geladen."); return }
         val device = state.selected ?: run { note("Kein Geraet ausgewaehlt."); return }
-        if (!device.matchesProfile) {
-            note("${device.name} passt nicht zum Profil ${profile.displayName}.")
-            return
+        when (
+            val gate = DeviceGate.check(
+                pinnedAddress = state.pinnedAddress,
+                address = device.address,
+                name = device.name,
+                match = profile.match,
+            )
+        ) {
+            is GateDecision.Refused -> {
+                audit.add(
+                    AuditKind.BLOCKED,
+                    "Verbindung zu ${device.address} abgelehnt: ${gate.message}",
+                    rule = gate.rule,
+                    timestampMs = now(),
+                )
+                _ui.update { it.copyWith(audit = audit.snapshot()) }
+                note(gate.message)
+                return
+            }
+
+            GateDecision.Allowed -> Unit
         }
 
         val rfcommCandidates = finder.resolveServiceUuids(
@@ -734,6 +781,7 @@ private fun UiState.copyWith(
     transport: TransportPreference = this.transport,
     useHandshake: Boolean = this.useHandshake,
     secureSocket: Boolean = this.secureSocket,
+    pinnedAddress: String? = this.pinnedAddress,
     probeBusy: Boolean = this.probeBusy,
     probeResult: List<String> = this.probeResult,
     gattServices: List<GattService> = this.gattServices,
@@ -759,6 +807,7 @@ private fun UiState.copyWith(
     transport = transport,
     useHandshake = useHandshake,
     secureSocket = secureSocket,
+    pinnedAddress = pinnedAddress,
     probeBusy = probeBusy,
     probeResult = probeResult,
     gattServices = gattServices,

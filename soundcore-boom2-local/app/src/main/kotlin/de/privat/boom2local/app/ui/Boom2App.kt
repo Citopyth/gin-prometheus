@@ -48,6 +48,7 @@ import de.privat.boom2local.app.Boom2ViewModel
 import de.privat.boom2local.app.LinkState
 import de.privat.boom2local.app.SelfCheck
 import de.privat.boom2local.app.UiState
+import de.privat.boom2local.protocol.BluetoothServices
 import de.privat.boom2local.protocol.GattSelector
 import de.privat.boom2local.protocol.TransportPreference
 
@@ -214,10 +215,33 @@ private fun DeviceTab(
                                         "direkt von der Box.",
                                 )
                             } else {
-                                Note("Dienste laut SDP (* = herstellerspezifisch):")
-                                for (uuid in device.allUuids) {
-                                    Mono(
-                                        if (uuid in device.customUuids) "* $uuid" else "  $uuid",
+                                Note("Dienste, die diese Box anbietet:")
+                                for (service in BluetoothServices.describeAll(device.allUuids)) {
+                                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        Text(
+                                            service.name,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                        )
+                                        RiskTag(service.risk)
+                                    }
+                                    Mono(service.uuid)
+                                }
+                                val concerns =
+                                    BluetoothServices.concerning(device.allUuids)
+                                if (concerns.isNotEmpty()) {
+                                    HorizontalDivider()
+                                    Note(
+                                        "Davon ${concerns.size} mit erweiterter Reichweite:",
+                                        warning = true,
+                                    )
+                                    for (service in concerns) {
+                                        Note("- ${service.name}: ${service.meaning}", warning = true)
+                                    }
+                                    Note(
+                                        "Diese Dienste gehoeren der Box und stehen in ihrer " +
+                                            "Firmware. Keine App kann sie dort loeschen. " +
+                                            "Abschalten laesst sich nur, was dein Handy davon " +
+                                            "benutzt - siehe Reiter Sicherheit.",
                                     )
                                 }
                             }
@@ -286,6 +310,28 @@ private fun DeviceTab(
                     "veroeffentlichten Beschreibungen dieses Protokolls betreffen RFCOMM, " +
                     "aber nur Kopfhoerer und die Space 2 - ob dieser Lautsprecher " +
                     "stattdessen BLE spricht, zeigt erst der Versuch.",
+            )
+            KeyValue("Gebunden an", state.pinnedAddress ?: "nichts")
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(
+                    onClick = { model.pinSelected() },
+                    enabled = state.selected != null &&
+                        state.selected.address != state.pinnedAddress,
+                ) {
+                    Text("An dieses Geraet binden")
+                }
+                OutlinedButton(
+                    onClick = { model.unpin() },
+                    enabled = state.pinnedAddress != null,
+                ) {
+                    Text("Loesen")
+                }
+            }
+            Note(
+                "Gebunden heisst: die App spricht ausschliesslich mit dieser Adresse und " +
+                    "lehnt jedes andere Geraet ab, auch eine zweite Boom 2 mit demselben " +
+                    "Namen. Das bindet die App an die Box - nicht die Box an dein Handy. " +
+                    "Wen die Box akzeptiert, entscheidet ihre eigene Firmware.",
             )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(
@@ -417,6 +463,38 @@ private fun SecurityTab(state: UiState, model: Boom2ViewModel) {
                 "Ohne die Berechtigung INTERNET kann ein Android-Prozess gar keinen " +
                     "Netzwerk-Socket oeffnen. Das ist keine Einstellung, die sich im " +
                     "Betrieb umdrehen laesst.",
+            )
+        }
+
+        SectionCard(
+            "Mikrofon und Telefonbuch abschalten",
+            "Was diese App nicht kann, und wo es wirklich geht.",
+        ) {
+            Note(
+                "Die Dienste einer Box - Freisprechen, Mikrofon, Telefonbuch - stehen in " +
+                    "ihrer Firmware. Keine App kann sie dort entfernen, und eine App ohne " +
+                    "Systemrechte kann sie auch auf dem Handy nicht abschalten: dafuer " +
+                    "braucht es BLUETOOTH_PRIVILEGED, das nur System-Apps bekommen.",
+            )
+            Note(
+                "Abschalten kannst du sie trotzdem - in den Android-Einstellungen, und " +
+                    "das wirkt systemweit statt nur in dieser App:",
+            )
+            Note("1. Einstellungen, dann Verbundene Geraete oder Bluetooth")
+            Note("2. Zahnrad neben der Soundcore Boom 2")
+            Note("3. \"Anrufe\" ausschalten - das ist der Freisprech- und Mikrofon-Kanal")
+            Note("4. \"Kontaktfreigabe\" ausschalten, falls vorhanden")
+            Note("5. \"Medienaudio\" anlassen, sonst spielt die Box keine Musik mehr")
+            Note(
+                "Danach taucht die Box nicht mehr als Freisprecheinrichtung auf und " +
+                    "Anrufe laufen ueber das Telefon. Welche Dienste deine Box ueberhaupt " +
+                    "anbietet, steht im Reiter Geraet.",
+            )
+            Note(
+                "Wen die Box selbst akzeptiert, laesst sich von aussen gar nicht steuern. " +
+                    "Soll sie nur dein Handy kennen: Box auf Werkseinstellungen " +
+                    "zuruecksetzen, dann ausschliesslich dein Handy koppeln. Danach ist " +
+                    "ihre Kopplungsliste leer bis auf dich.",
             )
         }
 

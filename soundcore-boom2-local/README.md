@@ -138,6 +138,46 @@ cd soundcore-boom2-local/protocol-verify
 > die Bequemlichkeit, aus der das APK faellt, sondern die Stelle, an der diese Schicht
 > ueberhaupt zum ersten Mal einen Compiler gesehen hat. Beides ist gruen.
 
+## Mikrofon, Freisprechen, fremde Geraete
+
+Drei Wuensche, die oft zusammen kommen, mit drei verschiedenen Antworten.
+
+**"Die Box soll nur mein Handy akzeptieren."** Geht von aussen nicht. Welche Geraete
+eine Box annimmt, entscheidet ihre eigene Firmware, und die ist geschlossen. Kein
+Bluetooth-Paket aendert daran etwas, und in keiner Quelle ist ein Befehl beschrieben,
+der einen Eintrag aus der Kopplungsliste entfernt. Der Weg, der wirklich funktioniert:
+**Box auf Werkseinstellungen zuruecksetzen, dann ausschliesslich dein Handy koppeln.**
+Danach ist ihre Liste leer bis auf dich.
+
+Was die App beitragen kann: die Lesebefehle `0b:01` und `0b:02` sollen beim Space 2 die
+Kopplungsliste zeigen (Quelle Q4, fuer die Boom 2 unbestaetigt). Sie liegen im Profil,
+rein lesend - du siehst damit, wer sonst noch drinsteht, loeschen kannst du es nicht.
+
+**"Hands-Free AG, Mikrofon und die unbekannten Dienste sollen weg."** Loeschen kann sie
+niemand von aussen: es sind Eintraege im SDP-Verzeichnis der Box, also wieder Firmware.
+Abschalten laesst sich, was *dein Handy* davon benutzt - aber auch das nicht aus dieser
+App heraus, denn `setConnectionPolicy()` verlangt `BLUETOOTH_PRIVILEGED`, das nur
+System-Apps bekommen. Es geht in den Android-Einstellungen, und dort systemweit:
+
+1. Einstellungen → Verbundene Geraete → Zahnrad neben der Boom 2
+2. **"Anrufe" ausschalten** — das ist der Freisprech- und Mikrofon-Kanal (HFP/HSP)
+3. **"Kontaktfreigabe" ausschalten**, falls vorhanden (PBAP, Telefonbuch)
+4. **"Medienaudio" anlassen** — sonst spielt die Box keine Musik mehr
+
+Danach taucht die Box nicht mehr als Freisprecheinrichtung auf. Dieselbe Anleitung steht
+im Reiter *Sicherheit* der App.
+
+Wobei die App hilft: sie **benennt** die Dienste, statt eine Spalte Hex-Zahlen zu zeigen.
+`0000111f-…` heisst "Hands-Free Audio Gateway", und daneben steht `Mikrofon`. Dienste,
+die weiter reichen als Audio, werden eigens aufgezaehlt — Mikrofon, Daten vom Handy,
+Netzwerk, und alles, was der Katalog nicht kennt, als `unbekannt` statt als Vermutung.
+
+**"Die App soll nur mit meiner Box reden."** Das geht, und zwar exakt: *Gerät* →
+**An dieses Geraet binden**. Danach spricht die App ausschliesslich mit dieser
+Bluetooth-Adresse und lehnt jedes andere Geraet ab, auch eine zweite Boom 2 mit
+demselben Namen. Namen taugen dafuer nicht — sie sind frei waehlbar und bei zwei
+Geraeten desselben Modells identisch.
+
 ## Zwei Transportwege
 
 Die App kann die Frames ueber beide Bluetooth-Wege schicken, umschaltbar im Reiter
