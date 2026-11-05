@@ -87,6 +87,27 @@ fun ControlTab(state: UiState, model: Boom2ViewModel) {
             )
         }
 
+        if (state.live.isNotEmpty()) {
+            SectionCard(
+                "Meldungen der Box",
+                "Diese Werte schickt die Box von sich aus, ohne dass gefragt wird.",
+            ) {
+                for (field in state.live.values) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        Text(field.label, style = MaterialTheme.typography.bodyMedium)
+                        Text(field.value, style = MaterialTheme.typography.bodyMedium)
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Mono("roh ${field.raw}")
+                        if (!field.verified) Tag("unbestaetigt", warning = true)
+                    }
+                }
+            }
+        }
+
         SectionCard(
             "Status",
             if (connected) null else "Nicht verbunden - Werte stammen aus der letzten Abfrage.",

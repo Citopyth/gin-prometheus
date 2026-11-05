@@ -24,8 +24,8 @@ class EndToEndTest {
 
         val state = assertNotNull(session.state(), "no state frame came back")
         assertEquals(emptyList(), state.problems)
-        assertEquals("1/5 (ca. 20 %)", state.field("batteryLevel")?.value)
-        assertEquals("05.00", state.field("firmware")?.value)
+        assertEquals("2/5 (ca. 40 %)", state.field("batteryLevel")?.value)
+        assertEquals("03.11", state.field("firmware")?.value)
         assertEquals(Command(0x01, 0x01), session.commandsSeenBySpeaker.single())
     }
 
@@ -86,7 +86,7 @@ class EndToEndTest {
         repeat(5) { session.send("readState") }
         assertEquals(5, session.inbound.size)
         assertTrue(session.inbound.all { it.command == Command(0x01, 0x01) })
-        assertTrue(session.inbound.all { it.body.size == 103 })
+        assertTrue(session.inbound.all { it.body.size == 146 })
     }
 
     @Test
@@ -142,11 +142,11 @@ private class FakeSpeaker(profile: DeviceProfile) {
                 body.copyOf(),
             )
 
-            Command(0x02, 0x84) -> if (payload.isNotEmpty()) body[29] = payload[0]
+            Command(0x02, 0x84) -> if (payload.isNotEmpty()) body[3] = payload[0]
             Command(0x0E, 0x08) -> if (payload.isNotEmpty()) body[69] = payload[0]
             Command(0x0E, 0x05) -> if (payload.isNotEmpty()) body[68] = payload[0]
             Command(0x0E, 0x07) -> if (payload.isNotEmpty()) body[67] = payload[0]
-            Command(0x02, 0x88) -> if (payload.size == 1) body[35] = payload[0]
+            Command(0x02, 0x88) -> if (payload.size == 1) body[33] = payload[0]
             else -> Unit
         }
         return null

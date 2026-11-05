@@ -52,7 +52,7 @@ class CaptureValidatorTest {
         assertEquals(listOf(0, 10), frames.take(2).map { it.offsetInStream })
         assertEquals(Direction.TO_DEVICE, frames[0].direction)
         assertEquals(Direction.FROM_DEVICE, frames[1].direction)
-        assertEquals(103, frames[1].bodySize)
+        assertEquals(146, frames[1].bodySize)
         var sum = 0
         for (f in frames) sum += f.size
         assertEquals(capture.size, sum)

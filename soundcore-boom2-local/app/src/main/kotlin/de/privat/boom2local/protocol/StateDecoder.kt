@@ -144,6 +144,34 @@ object StateDecoder {
         note = spec.note,
     )
 
+    /**
+     * Decodes a frame the speaker sent on its own.
+     *
+     * Returns null when the profile does not describe this command, which is the signal
+     * to log it as unknown rather than to invent a meaning for it.
+     */
+    fun decodeNotification(profile: DeviceProfile, frame: Frame): DecodedField? {
+        val notification = profile.state.notifications
+            .firstOrNull { it.commandAddress == frame.command } ?: return null
+        val spec = profile.state.fields.firstOrNull { it.key == notification.field }
+            ?: return null
+        if (notification.offset !in frame.body.indices) return null
+        val raw = frame.body[notification.offset].toInt() and 0xFF
+        val text = when (spec.type) {
+            FieldType.BOOL -> if (raw != 0) "an" else "aus"
+            else -> renderNumber(spec, raw)
+        }
+        return DecodedField(
+            key = spec.key,
+            label = spec.label,
+            value = text,
+            raw = Hex.encode(byteArrayOf(raw.toByte())),
+            offsets = listOf(notification.offset),
+            verified = spec.verified && notification.verified,
+            note = notification.note ?: spec.note,
+        )
+    }
+
     private fun renderNumber(spec: FieldSpec, raw: Int): String {
         val dbOffset = spec.dbOffset
         val dbScale = spec.dbScale

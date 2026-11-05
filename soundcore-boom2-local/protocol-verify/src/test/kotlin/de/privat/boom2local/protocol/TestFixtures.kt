@@ -24,31 +24,29 @@ object TestFixtures {
     fun boom2Profile(): DeviceProfile = DeviceProfile.parse(profileFile.readText())
 
     /**
-     * A state frame body for the Boom 2.
+     * The body of a state frame captured from a real Soundcore Boom 2 on 2026-11-05.
      *
-     * The first twelve bytes are the ones published in OpenSCQ30 issue #360, captured
-     * from a real Boom 2: `[20, 1, 0, 1, 1, 1, 2, 48, 53, 46, 48, 48]`, where
-     * `48 53 46 48 48` is ASCII "05.00". Everything past byte 11 was not published, so
-     * it is filled in here to exercise the remaining decoders — those bytes prove nothing
-     * about the hardware and are marked as synthetic wherever they are asserted on.
+     * Not a construction: these are the 146 bytes the speaker actually sent, taken from
+     * the app's own audit log. Every expectation derived from them is an expectation
+     * about hardware rather than about my idea of the hardware, which is the difference
+     * that matters after an earlier fixture let three wrong offsets through.
+     *
+     * The frame it came in was 156 bytes with a length field reading 156 and a checksum
+     * that verified, which is what confirmed the framing.
      */
-    fun boom2StateBody(): ByteArray {
-        val body = ByteArray(103)
-        val captured = intArrayOf(20, 1, 0, 1, 1, 1, 2, 48, 53, 46, 48, 48)
-        for (i in captured.indices) body[i] = captured[i].toByte()
-        // Synthetic from here on.
-        val serial = "A3138K1234567890A"
-        for (i in serial.indices) body[12 + i] = serial[i].code.toByte()
-        body[29] = 1.toByte()          // bassUp on
-        body[35] = 3.toByte()          // eq preset
-        body[36] = 120.toByte()        // 0.0 dB
-        body[39] = 130.toByte()        // +1.0 dB
-        body[42] = 110.toByte()        // -1.0 dB
-        body[67] = 2.toByte()          // light mode
-        body[68] = 200.toByte()        // brightness
-        body[69] = 1.toByte()          // light on
-        return body
-    }
+    fun boom2StateBody(): ByteArray = Hex.decode(
+        """
+        1f 02 00 01 01 01 02 30 33 2e 31 31 41 43 43 46 
+        30 58 30 45 32 35 31 30 31 39 30 35 01 31 ff ff 
+        ff 00 78 07 0a 78 07 0a 78 07 0a 78 07 0a 78 07 
+        0a 78 07 0a 78 07 0a 78 06 0a 78 01 0a 00 00 00 
+        4e 00 64 00 00 01 00 cd ff 01 02 ff ff ff 00 cd 
+        ff 02 03 ff 1e 00 ff 8e 00 ff e2 00 03 04 00 14 
+        ff 00 f7 ff ff 00 d8 ff ff ff 04 01 ff ff ff 05 
+        06 ff 3a 00 ff fc 00 00 ff cc 00 14 ff 8a 00 ff 
+        ff 00 d8 06 03 ff fc 00 ff 8e 00 00 ff cc 00 00 
+        00 00
+        """,
+    )
 
-    val capturedPrefixLength = 12
 }

@@ -28,12 +28,44 @@ class ProfileFileTest {
     }
 
     @Test
-    fun `nothing in it claims to be verified`() {
-        assertTrue(profile.state.fields.none { it.verified })
+    fun `only the fields confirmed against hardware claim to be verified`() {
+        assertEquals(
+            setOf("volume", "batteryLevel", "bassUp", "firmware", "serial", "customEq"),
+            profile.state.fields.filter { it.verified }.map { it.key }.toSet(),
+        )
+        // Every confirmed field has to say what confirmed it; "verified" without a
+        // reason is how a guess quietly turns into a fact.
+        for (field in profile.state.fields.filter { it.verified }) {
+            assertTrue(
+                field.note?.contains("bestaetigt") == true,
+                "field '${field.key}' claims to be verified but does not say why",
+            )
+        }
+    }
+
+    @Test
+    fun `no write command claims to be verified`() {
+        // Writes have never been tried against the speaker: the codes come from a
+        // capture of a different model.
         assertTrue(profile.commands.none { it.verified })
-        assertTrue(
-            profile.notes.isNotEmpty(),
-            "the profile should say in writing that it is unverified",
+        assertTrue(profile.notes.isNotEmpty())
+    }
+
+    @Test
+    fun `the notifications point at real fields and carry their evidence`() {
+        val fieldKeys = profile.state.fields.map { it.key }.toSet()
+        assertEquals(3, profile.state.notifications.size)
+        for (notification in profile.state.notifications) {
+            Command.parse(notification.command)
+            assertTrue(
+                notification.field in fieldKeys,
+                "'${notification.command}' points at unknown field '${notification.field}'",
+            )
+            assertTrue(notification.verified, "all three were confirmed on hardware")
+        }
+        assertEquals(
+            mapOf("01 03" to "batteryLevel", "01 09" to "volume", "02 04" to "bassUp"),
+            profile.state.notifications.associate { it.command to it.field },
         )
     }
 
@@ -82,7 +114,8 @@ class ProfileFileTest {
     @Test
     fun `the eq band indices are ascending and evenly spaced`() {
         val eq = profile.state.fields.first { it.key == "customEq" }
-        assertEquals(8, eq.indices.size)
+        assertEquals(9, eq.indices.size)
+        assertEquals(34, eq.indices.first())
         assertEquals(eq.indices.sorted(), eq.indices)
         val steps = eq.indices.zipWithNext { a, b -> b - a }.toSet()
         assertEquals(setOf(3), steps, "the profile documents a stride of 3")

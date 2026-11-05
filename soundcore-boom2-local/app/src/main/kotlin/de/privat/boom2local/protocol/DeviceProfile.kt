@@ -123,6 +123,22 @@ data class DeviceProfile(
             if (!fieldKeys.add(field.key)) problems += "duplicate state field '${field.key}'"
             problems += field.validate()
         }
+        val notificationCommands = mutableSetOf<String>()
+        for (notification in state.notifications) {
+            check("notifications['${notification.command}']") {
+                Command.parse(notification.command)
+            }
+            if (!notificationCommands.add(notification.command)) {
+                problems += "duplicate notification for '${notification.command}'"
+            }
+            if (notification.field !in fieldKeys) {
+                problems += "notification '${notification.command}' points at unknown " +
+                    "field '${notification.field}'"
+            }
+            if (notification.offset < 0) {
+                problems += "notification '${notification.command}': negative offset"
+            }
+        }
         return problems
     }
 
@@ -231,7 +247,29 @@ data class StateSpec(
     val requestCommand: String = "01 01",
     val responseCommand: String = "01 01",
     val fields: List<FieldSpec> = emptyList(),
+    /**
+     * Frames the speaker sends on its own, without being asked.
+     *
+     * The Boom 2 announces a changed battery level, volume or BassUp setting by itself.
+     * Each announcement carries the same value as a field of the state frame, so it is
+     * described as a pointer to that field rather than as a second decoder.
+     */
+    val notifications: List<NotificationSpec> = emptyList(),
 )
+
+@Serializable
+data class NotificationSpec(
+    /** Two bytes, e.g. `"01 03"`. */
+    val command: String,
+    /** The key of the state field whose value this frame carries. */
+    val field: String,
+    /** Byte offset inside the notification's own payload. */
+    val offset: Int = 0,
+    val verified: Boolean = false,
+    val note: String? = null,
+) {
+    val commandAddress: Command get() = Command.parse(command)
+}
 
 @Serializable
 enum class FieldType { U8, BOOL, ASCII, BYTES, EQ_BANDS }

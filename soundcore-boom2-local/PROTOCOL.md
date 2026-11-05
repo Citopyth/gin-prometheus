@@ -91,10 +91,14 @@ Rueckfall, nicht die Grundlage.
 **Gemeldet (aus einer Kotlin-Portierung von OpenSCQ30):** die konkreten Header-Bytes
 `08 ee 00 00 00` / `09 ff 00 00 01` und die Pruefsumme als 8-Bit-Summe.
 
-**Unbekannt:** ob das Laengenfeld den ganzen Rahmen oder nur die Nutzlast zaehlt. Die App
-nimmt "ganzer Rahmen" an (`LengthSemantics.TOTAL`), kann aber beides, und
-`CaptureValidator` entscheidet es aus echten Bytes statt aus der Annahme. Genau dafuer
-ist der Reiter *Protokoll* da.
+**Am Geraet bestaetigt (2026-11-05):** das Laengenfeld zaehlt den **ganzen Rahmen**.
+Drei Status-Antworten der Boom 2 waren je 156 Byte lang, das Laengenfeld las `9c 00` =
+156, und die Pruefsumme stimmte in allen drei Faellen. Die Sondierung in der App hat es
+unabhaengig bestaetigt: auf die Deutung `TOTAL` kam nach 42 ms eine Antwort, auf `BODY`
+gar keine.
+
+Damit sind Header, Laengenfeld und Pruefsummen-Verfahren **vollstaendig bestaetigt** —
+der gesamte Rahmen, nicht nur Teile davon.
 
 ## Zustand lesen
 
@@ -102,7 +106,40 @@ ist der Reiter *Protokoll* da.
 Zustand ab. Das ist die einzige Protokoll-Aussage, die quer ueber alle drei Geraete
 zusammenpasst.
 
-**Belegt (Q2) — der echte Boom-2-Mitschnitt.** Die Nutzlast beginnt mit:
+**Am Geraet bestaetigt (2026-11-05).** Ein vollstaendiger Mitschnitt von 146 Nutzbytes,
+drei Abfragen ueber 133 Minuten, hat die Tabelle unten entschieden. Die Methode: die
+drei Antworten byteweise vergleichen, die sich aendernden Stellen heraussuchen und ihre
+Wertemengen mit denen der unaufgeforderten Meldungen abgleichen.
+
+| Feld | Offset | Status | Wie bestaetigt |
+|---|---|---|---|
+| Lautstaerke | `body[0]` | **bestaetigt** | gleiche Werte wie Meldung `01:09`, die in Buendeln eintrifft |
+| Akku | `body[1]` | **bestaetigt** | fiel 2 → 1, im Gleichklang mit Meldung `01:03` |
+| BassUp | `body[3]` | **bestaetigt** | wechselte 0 ↔ 1 mit Meldung `02:04`. Frueher stand hier Offset 29 — falsch |
+| Firmware | `body[7..12)` | **bestaetigt** | `30 33 2e 31 31` = "03.11" |
+| Seriennummer | `body[12..28)` | **bestaetigt**, korrigiert | 16 Zeichen, nicht 17; die 17. Stelle ist ein Steuerzeichen |
+| EQ-Baender | `body[34,37,…,58]` | **bestaetigt**, korrigiert | neun Dreiergruppen, alle mit `0x78` = 120 = 0 dB. Abstand 3 stimmte, Start lag zwei zu spaet, und es sind neun statt acht |
+| EQ-Voreinstellung | `body[33]` | Vermutung | der alte Offset 35 liegt im EQ-Block und ist widerlegt |
+| Licht | `body[67..69]` | unbestaetigt | im Mitschnitt 0 / 0 / 1 |
+
+Die Akku-Obergrenze 5 bleibt unbestaetigt: beobachtet wurden nur 2 und 1. Dass `0x78`
+genau 0 dB entspricht, passt zur Formel `120 + dB*10` aus Q4, ist aber nur durch einen
+flachen EQ belegt — ein verstelltes Band wuerde es beweisen.
+
+## Meldungen, die die Box von sich aus schickt
+
+**Am Geraet bestaetigt (2026-11-05):** die Boom 2 wartet nicht auf Fragen.
+
+| Befehl | Nutzlast | Bedeutung | Belegt durch |
+|---|---|---|---|
+| `01:03` | 1 Byte | Akkustand | Werte `02 → 01`, identisch mit `body[1]` |
+| `01:09` | 1 Byte | Lautstaerke | Wert `1f` (31), identisch mit `body[0]`; fuenf Meldungen in einer Sekunde |
+| `02:04` | 1 Byte | BassUp | Werte `00 → 01`, identisch mit `body[3]` |
+
+In keiner der Quellen Q1–Q6 stehen diese drei. Sie sind aus dem Mitschnitt an echter
+Hardware erschlossen.
+
+**Belegt (Q2) — der aeltere Boom-2-Mitschnitt.** Die Nutzlast beginnt mit:
 
 Q2 gibt die Bytes dezimal an: `[20, 1, 0, 1, 1, 1, 2, 48, 53, 46, 48, 48, …]`.
 Dasselbe in Hex:
@@ -182,9 +219,13 @@ im Experten-Modus gesperrt bleibt.
 
 ## Zusammenfassung des Verifikationsstands
 
-- **Belegt und getestet:** Transport (RFCOMM), Vendor-UUID-Schema, Rahmenaufbau in der
-  Struktur, `01 01` als Zustandsabfrage, Firmware-Offset der Boom 2.
-- **Gemeldet, plausibel, ungeprueft:** alle uebrigen Offsets und alle Schreibbefehle.
+- **An echter Hardware bestaetigt:** Transport (RFCOMM), Dienst-UUID, Modellnummer,
+  **der komplette Rahmen** (Header, Laengenfeld als Gesamtlaenge, Pruefsumme), `01 01`
+  als Zustandsabfrage, und die Felder Lautstaerke, Akku, BassUp, Firmware,
+  Seriennummer sowie die Lage der neun EQ-Baender. Dazu die drei Meldungen `01:03`,
+  `01:09` und `02:04`, die in keiner Quelle stehen.
+- **Gemeldet, plausibel, ungeprueft:** die Licht-Offsets und **alle Schreibbefehle** —
+  es wurde noch nichts auf die Box geschrieben.
 - **Am Geraet bestaetigt:** Dienst-UUID `0cf12d31-fac3-4553-bd80-d6832e7b3138`,
   Modellnummer A3138, RFCOMM als Transport.
 - **Widerlegt:** `0cf12d31-…-d6832e7d3138` als UUID der Boom 2, und damit die Annahme,

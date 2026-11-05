@@ -19,6 +19,7 @@ import de.privat.boom2local.protocol.Command
 import de.privat.boom2local.protocol.CommandPolicy
 import de.privat.boom2local.protocol.CommandSpec
 import de.privat.boom2local.protocol.ConnectionPlan
+import de.privat.boom2local.protocol.DecodedField
 import de.privat.boom2local.protocol.DecodedState
 import de.privat.boom2local.protocol.DeviceGate
 import de.privat.boom2local.protocol.DeviceProfile
@@ -60,6 +61,8 @@ class UiState(
     val selected: FoundDevice? = null,
     val link: LinkState = LinkState.Idle,
     val deviceState: DecodedState? = null,
+    /** Values the speaker announced on its own, newest per field. */
+    val live: Map<String, DecodedField> = emptyMap(),
     val readOnly: Boolean = true,
     val rawMode: RawMode = RawMode.OFF,
     /** Pending argument values per command key, as the controls are moved. */
@@ -488,15 +491,34 @@ class Boom2ViewModel(application: Application) : AndroidViewModel(application) {
         if (frame.command == profile.stateResponseCommand) {
             val decoded = StateDecoder.decode(profile, frame)
             _ui.update { it.copyWith(deviceState = decoded, audit = audit.snapshot()) }
-        } else {
+            return
+        }
+        // The speaker announces a changed battery level, volume or BassUp setting by
+        // itself, without being asked. Those frames are described in the profile, so
+        // they update the display instead of being logged as noise.
+        val announced = StateDecoder.decodeNotification(profile, frame)
+        if (announced != null) {
             audit.add(
-                AuditKind.INFO,
-                "Antwort ${frame.command}, ${frame.body.size} Byte (im Profil nicht beschrieben)",
+                AuditKind.RECEIVED,
+                "${frame.command} meldet ${announced.label}: ${announced.value}",
                 hex = Hex.encode(frame.body),
                 timestampMs = now(),
             )
-            _ui.update { it.copyWith(audit = audit.snapshot()) }
+            _ui.update {
+                it.copyWith(
+                    live = it.live + (announced.key to announced),
+                    audit = audit.snapshot(),
+                )
+            }
+            return
         }
+        audit.add(
+            AuditKind.INFO,
+            "Antwort ${frame.command}, ${frame.body.size} Byte (im Profil nicht beschrieben)",
+            hex = Hex.encode(frame.body),
+            timestampMs = now(),
+        )
+        _ui.update { it.copyWith(audit = audit.snapshot()) }
     }
 
     // --- commands ---------------------------------------------------------------------
@@ -770,6 +792,7 @@ private fun UiState.copyWith(
     selected: FoundDevice? = this.selected,
     link: LinkState = this.link,
     deviceState: DecodedState? = this.deviceState,
+    live: Map<String, DecodedField> = this.live,
     readOnly: Boolean = this.readOnly,
     rawMode: RawMode = this.rawMode,
     arguments: Map<String, Map<String, Int>> = this.arguments,
@@ -796,6 +819,7 @@ private fun UiState.copyWith(
     selected = selected,
     link = link,
     deviceState = deviceState,
+    live = live,
     readOnly = readOnly,
     rawMode = rawMode,
     arguments = arguments,

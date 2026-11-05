@@ -88,21 +88,29 @@
     "responseCommand": "01 01",
     "fields": [
       {
+        "key": "volume",
+        "label": "Lautstaerke",
+        "type": "U8",
+        "offset": 0,
+        "verified": true,
+        "note": "Am Geraet bestaetigt: body[0] traegt denselben Wert wie die Meldung 01:09, die in Buendeln eintrifft, wie man es von Lautstaerketasten erwartet. Beobachtet wurde nur 0x1f (31); die Obergrenze der Skala ist offen."
+      },
+      {
         "key": "batteryLevel",
         "label": "Akku",
         "type": "U8",
         "offset": 1,
         "scaleMax": 5,
-        "verified": false,
-        "note": "Aus dem Boom-3i-Mitschnitt: body[1] als Stufe 0..5. Im Boom-2-Mitschnitt steht hier 1."
+        "verified": true,
+        "note": "Am Geraet bestaetigt: body[1] fiel in zwei Stunden von 2 auf 1, im Gleichklang mit der Meldung 01:03. Der Offset steht fest, die Obergrenze 5 stammt weiter aus dem Boom-3i-Mitschnitt und ist unbestaetigt."
       },
       {
-        "key": "byte0",
-        "label": "Byte 0 (Akku-Prozent?)",
-        "type": "U8",
-        "offset": 0,
-        "verified": false,
-        "note": "Hypothese: im Boom-2-Mitschnitt steht hier 20 (0x14), was zu 1/5 = 20 % passen wuerde. Unbestaetigt - mit vollem und leerem Akku vergleichen."
+        "key": "bassUp",
+        "label": "BassUp",
+        "type": "BOOL",
+        "offset": 3,
+        "verified": true,
+        "note": "Am Geraet bestaetigt: body[3] wechselte zwischen 0 und 1 im Gleichklang mit der Meldung 02:04. Zuvor stand im Profil Offset 29 - das war falsch."
       },
       {
         "key": "firmware",
@@ -110,71 +118,92 @@
         "type": "ASCII",
         "offset": 7,
         "length": 5,
-        "verified": false,
-        "note": "Boom-2-Mitschnitt: 48 53 46 48 48 = \"05.00\". Laenge an deinem Geraet pruefen."
+        "verified": true,
+        "note": "Am Geraet bestaetigt: 30 33 2e 31 31 = \"03.11\"."
       },
       {
         "key": "serial",
         "label": "Seriennummer",
         "type": "ASCII",
         "offset": 12,
-        "length": 17,
-        "verified": false,
-        "note": "Aus dem Boom-3i-Mitschnitt: body[12..29]."
-      },
-      {
-        "key": "bassUp",
-        "label": "BassUp",
-        "type": "BOOL",
-        "offset": 29,
-        "verified": false
+        "length": 16,
+        "verified": true,
+        "note": "Am Geraet bestaetigt: 16 Zeichen. Das Profil hatte 17, womit ein Steuerzeichen mit ausgelesen wurde."
       },
       {
         "key": "eqPreset",
         "label": "EQ-Voreinstellung",
         "type": "U8",
-        "offset": 35,
-        "verified": false
+        "offset": 33,
+        "verified": false,
+        "note": "Vermutung. Der alte Offset 35 ist widerlegt - er liegt innerhalb des EQ-Blocks. body[33] ist das Byte unmittelbar davor und war im Mitschnitt 0."
       },
       {
         "key": "customEq",
         "label": "EQ-Baender",
         "type": "EQ_BANDS",
         "indices": [
-          36,
-          39,
-          42,
-          45,
-          48,
-          51,
-          54,
-          57
+          34,
+          37,
+          40,
+          43,
+          46,
+          49,
+          52,
+          55,
+          58
         ],
         "dbOffset": 120,
         "dbScale": 10.0,
-        "verified": false,
-        "note": "Index-Abstand 3 und die dB-Umrechnung (120 + dB*10) sind beide unbestaetigt. Beim Mappen zuerst ein Band verstellen und die Byte-Diffs im Mitschnitt ansehen."
+        "verified": true,
+        "note": "Am Geraet bestaetigt: neun Dreiergruppen ab body[34], im Mitschnitt alle mit 0x78 = 120 im ersten Byte. Der Abstand 3 stimmte, der Startpunkt lag zwei zu spaet, und es sind neun Baender, nicht acht. Dass 120 genau 0 dB entspricht, passt zur Formel 120 + dB*10 aus Quelle Q4, ist aber nur durch einen flachen EQ belegt - ein verstelltes Band wuerde es beweisen."
       },
       {
         "key": "lightMode",
         "label": "Lichtmodus",
         "type": "U8",
         "offset": 67,
-        "verified": false
+        "verified": false,
+        "note": "Unbestaetigt, im Mitschnitt 0."
       },
       {
         "key": "lightBrightness",
         "label": "Helligkeit",
         "type": "U8",
         "offset": 68,
-        "verified": false
+        "verified": false,
+        "note": "Unbestaetigt, im Mitschnitt 0. Auffaellig in der Naehe: body[66] = 100."
       },
       {
         "key": "lightOn",
         "label": "Licht",
         "type": "BOOL",
         "offset": 69,
-        "verified": false
+        "verified": false,
+        "note": "Unbestaetigt, im Mitschnitt 1."
+      }
+    ],
+    "notifications": [
+      {
+        "command": "01 03",
+        "field": "batteryLevel",
+        "offset": 0,
+        "verified": true,
+        "note": "Die Box meldet den Akkustand von sich aus, etwa alle 30 Sekunden."
+      },
+      {
+        "command": "01 09",
+        "field": "volume",
+        "offset": 0,
+        "verified": true,
+        "note": "Die Box meldet Lautstaerke-Aenderungen von sich aus."
+      },
+      {
+        "command": "02 04",
+        "field": "bassUp",
+        "offset": 0,
+        "verified": true,
+        "note": "Die Box meldet, wenn BassUp umgeschaltet wird - auch per Taste am Geraet."
       }
     ]
   },
@@ -364,11 +393,12 @@
   "blockedCommands": [],
   "maxRawPayloadBytes": 64,
   "notes": [
-    "Die Byte-Offsets und Befehlscodes hier sind reverse-engineered und fuer die Boom 2 unbestaetigt; in der App traegt jeder davon ein rotes 'unbestaetigt'. Ausgenommen sind die Dienst-UUID und die Modellnummer, die an echter Hardware bestaetigt wurden. Quellen und Verifikationsstand stehen in PROTOCOL.md.",
+    "Stand 2026-11-05: Rahmen, Akku, Lautstaerke, BassUp, Firmware, Seriennummer und die Lage der EQ-Baender sind an einer echten Boom 2 bestaetigt und tragen verified=true. Die schreibenden Befehle sind weiterhin unbestaetigt - sie stammen aus dem Boom-3i-Mitschnitt. Einzelheiten in PROTOCOL.md.",
     "blockedCommands ist leer, weil kein Firmware-/OTA-Befehl der Boom 2 bekannt ist. Das ist keine Luecke: alles, was nicht in commands steht, wird ohnehin nicht gesendet (Default-Deny). Sobald ein Mitschnitt einen OTA-Befehl zeigt, gehoert er hier hinein - dann ist er auch im Experten-Modus gesperrt.",
     "framing.handshake enthaelt die sieben Schritte, die beim Soundcore Space 2 als Begruessung dokumentiert sind (Quelle Q4). Fuer die Boom 2 sind sie unbestaetigt, und sie werden nur gesendet, wenn der Schalter 'Handshake senden' eingeschaltet ist - es sind Schreibzugriffe, deren Bedeutung auf diesem Modell niemand kennt. Anlass: die Box nimmt die Verbindung an, antwortet nicht und legt nach rund 27 Sekunden auf; beim Space 2 ist genau das das Verhalten vor dem Handshake.",
     "Der BLE-Pfad waehlt den Steuerdienst selbst: ein nicht-standardisierter GATT-Dienst mit je einer beschreibbaren und einer meldenden Eigenschaft. serviceUuids bleibt leer, bis ein Mitschnitt den richtigen Dienst zeigt - dann hier eintragen. blockedServiceUuids sperrt Nordic Secure DFU und das aeltere DFU-Profil, also die Dienste, ueber die Firmware uebertragen wird; die Liste ist nicht vollstaendig, und ein als Updater erkannter Dienst gehoert ebenfalls hinein.",
     "Die Dienst-UUID 0cf12d31-fac3-4553-bd80-d6832e7b3138 wurde am 2026-11-03 an einer echten Boom 2 bestaetigt: die Box bietet sie per SDP an und nimmt die Verbindung darauf an. uuidPrefix endet deshalb auf ...d6832e statt ...d6832e7d - die Boom 2 hat 7b, die Space 2 hat 7d, mein urspruengliches Praefix war ein Zeichen zu lang.",
-    "Die Lesebefehle 0b:01 und 0b:02 sollen beim Space 2 die Kopplungsliste der Box zeigen, also welche Geraete sie sonst noch kennt. Ein Befehl zum Loeschen eines Eintrags ist in keiner Quelle beschrieben - wer die Liste leeren will, muss die Box zuruecksetzen."
+    "Die Lesebefehle 0b:01 und 0b:02 sollen beim Space 2 die Kopplungsliste der Box zeigen, also welche Geraete sie sonst noch kennt. Ein Befehl zum Loeschen eines Eintrags ist in keiner Quelle beschrieben - wer die Liste leeren will, muss die Box zuruecksetzen.",
+    "Die Box schickt von sich aus Meldungen: 01:03 Akku, 01:09 Lautstaerke, 02:04 BassUp. Sie stehen unter state.notifications und zeigen jeweils auf das Statusfeld mit derselben Bedeutung, damit es nur einen Decoder gibt. Erkannt wurden sie, indem ueber zwei Stunden die Wertemengen der Meldungen mit denen der Status-Bytes verglichen wurden."
   ]
 }
