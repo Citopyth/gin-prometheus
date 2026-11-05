@@ -52,21 +52,65 @@ class ProfileFileTest {
     }
 
     @Test
-    fun `the notifications point at real fields and carry their evidence`() {
+    fun `every notification points at a field that exists`() {
         val fieldKeys = profile.state.fields.map { it.key }.toSet()
-        assertEquals(3, profile.state.notifications.size)
         for (notification in profile.state.notifications) {
             Command.parse(notification.command)
             assertTrue(
                 notification.field in fieldKeys,
                 "'${notification.command}' points at unknown field '${notification.field}'",
             )
-            assertTrue(notification.verified, "all three were confirmed on hardware")
+            assertTrue(
+                !notification.note.isNullOrBlank(),
+                "'${notification.command}' needs to say where its reading comes from",
+            )
         }
         assertEquals(
-            mapOf("01 03" to "batteryLevel", "01 09" to "volume", "02 04" to "bassUp"),
+            mapOf(
+                "01 03" to "batteryLevel",
+                "01 09" to "volume",
+                "02 04" to "bassUp",
+                "0e 09" to "lightOn",
+            ),
             profile.state.notifications.associate { it.command to it.field },
         )
+    }
+
+    @Test
+    fun `a notification claims confirmation only where the capture gave it`() {
+        // Three were pinned down by matching their values against a state byte over a
+        // long capture. The fourth only ever appeared with one value, so its reading is
+        // plausible and nothing more.
+        assertEquals(
+            setOf("01 03", "01 09", "02 04"),
+            profile.state.notifications.filter { it.verified }.map { it.command }.toSet(),
+        )
+        assertEquals(
+            setOf("0e 09"),
+            profile.state.notifications.filterNot { it.verified }.map { it.command }.toSet(),
+        )
+    }
+
+    @Test
+    fun `an acknowledged command says so, and that is not the same as verified`() {
+        val acknowledged = profile.commands.filter { it.acknowledged }.map { it.key }.toSet()
+        assertEquals(
+            setOf("bassUp", "eqPreset", "customEqBand", "lightOn", "lightBrightness"),
+            acknowledged,
+        )
+        // The speaker confirms it knows these commands; what they do is still a label
+        // borrowed from another model, so none of them is verified.
+        assertTrue(profile.commands.none { it.verified })
+        for (spec in profile.commands.filter { it.acknowledged }) {
+            assertTrue(
+                spec.note?.contains("quittiert") == true,
+                "command '${spec.key}' claims acknowledgement but does not say how",
+            )
+        }
+        val notAcknowledged = profile.commands
+            .filter { it.kind == CommandKind.WRITE && !it.acknowledged }
+            .map { it.key }
+        assertEquals(listOf("lightMode"), notAcknowledged)
     }
 
     @Test

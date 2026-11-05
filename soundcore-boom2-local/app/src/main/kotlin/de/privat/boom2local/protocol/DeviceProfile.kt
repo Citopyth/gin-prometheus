@@ -331,7 +331,16 @@ data class CommandSpec(
     /** Space separated hex, `??` for a byte an argument fills in. */
     val payloadTemplate: String = "",
     val arguments: List<ArgumentSpec> = emptyList(),
+    /** True when the effect of this command has been seen on the device. */
     val verified: Boolean = false,
+    /**
+     * True when the device answers this command with an acknowledgement.
+     *
+     * Deliberately separate from [verified]. An acknowledgement proves the speaker has
+     * a handler for this command address and payload shape — it says nothing about what
+     * that handler does. "BassUp" is still a label borrowed from another model.
+     */
+    val acknowledged: Boolean = false,
     val note: String? = null,
 ) {
     val commandAddress: Command get() = Command.parse(command)

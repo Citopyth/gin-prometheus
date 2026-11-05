@@ -27,18 +27,19 @@ import de.privat.boom2local.protocol.Frame
 import de.privat.boom2local.protocol.GateDecision
 import de.privat.boom2local.protocol.GattService
 import de.privat.boom2local.protocol.Hex
+import de.privat.boom2local.protocol.Inbound
+import de.privat.boom2local.protocol.InboundClassifier
 import de.privat.boom2local.protocol.LengthSemantics
 import de.privat.boom2local.protocol.PacketCodec
+import de.privat.boom2local.protocol.PendingCommands
 import de.privat.boom2local.protocol.PolicyDecision
 import de.privat.boom2local.protocol.ProfileEntry
-import de.privat.boom2local.protocol.ProfileMatcher
 import de.privat.boom2local.protocol.RawMode
 import de.privat.boom2local.protocol.ReconnectPolicy
 import de.privat.boom2local.protocol.SessionEvent
 import de.privat.boom2local.protocol.SessionMachine
 import de.privat.boom2local.protocol.SessionPhase
 import de.privat.boom2local.protocol.SessionState
-import de.privat.boom2local.protocol.StateDecoder
 import de.privat.boom2local.protocol.TransportKind
 import de.privat.boom2local.protocol.TransportPreference
 import kotlinx.coroutines.Job
@@ -66,6 +67,10 @@ class UiState(
     val deviceState: DecodedState? = null,
     /** Values the speaker announced on its own, newest per field. */
     val live: Map<String, DecodedField> = emptyMap(),
+    /** Commands sent and not yet answered. */
+    val pending: PendingCommands = PendingCommands(),
+    /** Set when the speaker stopped answering without dropping the link. */
+    val stalled: Boolean = false,
     val readOnly: Boolean = true,
     val rawMode: RawMode = RawMode.OFF,
     /** Pending argument values per command key, as the controls are moved. */
@@ -126,6 +131,7 @@ class Boom2ViewModel(application: Application) : AndroidViewModel(application) {
     private var link: ControlTransport? = null
     private var frameJob: Job? = null
     private var retryJob: Job? = null
+    private var watchdogJob: Job? = null
 
     private val _ui = MutableStateFlow(UiState())
     val ui: StateFlow<UiState> = _ui.asStateFlow()
@@ -439,6 +445,7 @@ class Boom2ViewModel(application: Application) : AndroidViewModel(application) {
                             audit = audit.snapshot(),
                         )
                     }
+                    startWatchdog()
                     runHandshake(profile)
                     readState()
                     return@launch
@@ -506,6 +513,23 @@ class Boom2ViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /**
+     * Checks for silence on a timer as well as on every send.
+     *
+     * Without it the last command of a session would never be reported as unanswered:
+     * the checks hang off sending, and the moment that matters is the one after you
+     * stop.
+     */
+    private fun startWatchdog() {
+        watchdogJob?.cancel()
+        watchdogJob = viewModelScope.launch {
+            while (true) {
+                delay(WATCHDOG_TICK_MS)
+                checkForSilence()
+            }
+        }
+    }
+
     private fun cancelRetry() {
         retryJob?.cancel()
         retryJob = null
@@ -532,6 +556,9 @@ class Boom2ViewModel(application: Application) : AndroidViewModel(application) {
 
     /** Tears the transport down without telling the session machine anything. */
     private fun closeLink() {
+        watchdogJob?.cancel()
+        watchdogJob = null
+        _ui.update { it.copyWith(pending = it.pending.cleared(), stalled = false) }
         frameJob?.cancel()
         frameJob = null
         // shutdown(), not close(): a fresh transport is built for every attempt, so this
@@ -577,37 +604,82 @@ class Boom2ViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun onFrame(frame: Frame) {
         val profile = _ui.value.profile ?: return
-        if (frame.command == profile.stateResponseCommand) {
-            val decoded = StateDecoder.decode(profile, frame)
-            _ui.update { it.copyWith(deviceState = decoded, audit = audit.snapshot()) }
-            return
+        // Anything coming back for a command answers it, whatever kind of answer it is.
+        _ui.update {
+            it.copyWith(pending = it.pending.answered(frame.command), stalled = false)
         }
-        // The speaker announces a changed battery level, volume or BassUp setting by
-        // itself, without being asked. Those frames are described in the profile, so
-        // they update the display instead of being logged as noise.
-        val announced = StateDecoder.decodeNotification(profile, frame)
-        if (announced != null) {
-            audit.add(
-                AuditKind.RECEIVED,
-                "${frame.command} meldet ${announced.label}: ${announced.value}",
-                hex = Hex.encode(frame.body),
-                timestampMs = now(),
-            )
-            _ui.update {
-                it.copyWith(
-                    live = it.live + (announced.key to announced),
-                    audit = audit.snapshot(),
-                )
+        when (val inbound = InboundClassifier.classify(profile, frame)) {
+            is Inbound.State -> _ui.update {
+                it.copyWith(deviceState = inbound.decoded, audit = audit.snapshot())
             }
-            return
+
+            is Inbound.Notification -> {
+                audit.add(
+                    AuditKind.RECEIVED,
+                    "${frame.command} meldet ${inbound.field.label}: ${inbound.field.value}",
+                    hex = Hex.encode(frame.body),
+                    timestampMs = now(),
+                )
+                _ui.update {
+                    it.copyWith(
+                        live = it.live + (inbound.field.key to inbound.field),
+                        audit = audit.snapshot(),
+                    )
+                }
+            }
+
+            is Inbound.Acknowledgement -> {
+                // The speaker echoes a command back with an empty body to say it
+                // understood it. Worth showing: its absence is how you find out a
+                // command is not supported.
+                audit.add(
+                    AuditKind.RECEIVED,
+                    "${inbound.command} bestaetigt" +
+                        (inbound.label?.let { " ($it)" } ?: ""),
+                    timestampMs = now(),
+                )
+                _ui.update { it.copyWith(audit = audit.snapshot()) }
+            }
+
+            is Inbound.Unknown -> {
+                audit.add(
+                    AuditKind.INFO,
+                    "Antwort ${inbound.command}, ${inbound.body.size} Byte " +
+                        "(im Profil nicht beschrieben)",
+                    hex = Hex.encode(inbound.body),
+                    timestampMs = now(),
+                )
+                _ui.update { it.copyWith(audit = audit.snapshot()) }
+            }
         }
-        audit.add(
-            AuditKind.INFO,
-            "Antwort ${frame.command}, ${frame.body.size} Byte (im Profil nicht beschrieben)",
-            hex = Hex.encode(frame.body),
-            timestampMs = now(),
-        )
-        _ui.update { it.copyWith(audit = audit.snapshot()) }
+    }
+
+    /**
+     * Notices that the speaker went quiet.
+     *
+     * A Soundcore speaker can stop answering while the socket stays open, and then
+     * every further command looks like it was sent. Checking on each send and each
+     * answer is enough: twelve unanswered frames in a row stop looking like success.
+     */
+    private fun checkForSilence() {
+        val moment = now()
+        val overdue = _ui.value.pending.overdue(moment)
+        if (overdue.isEmpty()) return
+        for (entry in overdue) {
+            audit.add(
+                AuditKind.ERROR,
+                "Keine Antwort auf ${entry.command} nach " +
+                    "${(moment - entry.sentAtMs) / 1000} Sekunden",
+                timestampMs = moment,
+            )
+        }
+        _ui.update {
+            it.copyWith(
+                pending = it.pending.withoutOverdue(moment),
+                stalled = true,
+                audit = audit.snapshot(),
+            )
+        }
     }
 
     // --- commands ---------------------------------------------------------------------
@@ -677,7 +749,13 @@ class Boom2ViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             try {
                 active.send(spec.commandAddress, payload)
-                _ui.update { it.copyWith(audit = audit.snapshot()) }
+                _ui.update {
+                    it.copyWith(
+                        pending = it.pending.sent(spec.commandAddress, now()),
+                        audit = audit.snapshot(),
+                    )
+                }
+                checkForSilence()
             } catch (e: Exception) {
                 note("Senden fehlgeschlagen: ${e.message}")
                 _ui.update { it.copyWith(audit = audit.snapshot()) }
@@ -724,7 +802,13 @@ class Boom2ViewModel(application: Application) : AndroidViewModel(application) {
                 viewModelScope.launch {
                     try {
                         active.send(command, payload)
-                        _ui.update { it.copyWith(audit = audit.snapshot()) }
+                        _ui.update {
+                            it.copyWith(
+                                pending = it.pending.sent(command, now()),
+                                audit = audit.snapshot(),
+                            )
+                        }
+                        checkForSilence()
                     } catch (e: Exception) {
                         note("Senden fehlgeschlagen: ${e.message}")
                     }
@@ -854,6 +938,7 @@ class Boom2ViewModel(application: Application) : AndroidViewModel(application) {
 
     override fun onCleared() {
         cancelRetry()
+        watchdogJob?.cancel()
         frameJob?.cancel()
         link?.shutdown()
         link = null
@@ -865,6 +950,9 @@ class Boom2ViewModel(application: Application) : AndroidViewModel(application) {
     private companion object {
         /** How long to wait for an answer before calling a framing variant dead. */
         const val PROBE_WAIT_MS = 3_000L
+
+        /** How often to look for commands the speaker never answered. */
+        const val WATCHDOG_TICK_MS = 2_000L
     }
 }
 
@@ -884,6 +972,8 @@ private fun UiState.copyWith(
     autoReconnect: Boolean = this.autoReconnect,
     deviceState: DecodedState? = this.deviceState,
     live: Map<String, DecodedField> = this.live,
+    pending: PendingCommands = this.pending,
+    stalled: Boolean = this.stalled,
     readOnly: Boolean = this.readOnly,
     rawMode: RawMode = this.rawMode,
     arguments: Map<String, Map<String, Int>> = this.arguments,
@@ -912,6 +1002,8 @@ private fun UiState.copyWith(
     autoReconnect = autoReconnect,
     deviceState = deviceState,
     live = live,
+    pending = pending,
+    stalled = stalled,
     readOnly = readOnly,
     rawMode = rawMode,
     arguments = arguments,

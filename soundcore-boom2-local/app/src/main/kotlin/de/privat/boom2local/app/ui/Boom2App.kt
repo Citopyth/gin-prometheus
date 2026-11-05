@@ -292,6 +292,17 @@ private fun DeviceTab(
                     Note("Verbunden ueber ${session.transport}.")
                     session.label?.let { Mono(it) }
                     session.detail?.let { Note(it) }
+                    if (state.stalled) {
+                        Note(
+                            "Die Box antwortet nicht mehr, obwohl die Verbindung steht. " +
+                                "Das kommt vor - trennen und neu verbinden hilft meist. " +
+                                "Welche Befehle unbeantwortet blieben, steht im Reiter " +
+                                "Protokoll.",
+                            warning = true,
+                        )
+                    } else if (state.pending.size > 0) {
+                        Note("${state.pending.size} Befehl(e) warten auf Antwort.")
+                    }
                 }
 
                 SessionPhase.FAILED -> {

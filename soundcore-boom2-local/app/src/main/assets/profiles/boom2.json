@@ -207,6 +207,13 @@
         "offset": 0,
         "verified": true,
         "note": "Die Box meldet, wenn BassUp umgeschaltet wird - auch per Taste am Geraet."
+      },
+      {
+        "command": "0e 09",
+        "field": "lightOn",
+        "offset": 0,
+        "verified": false,
+        "note": "Kam zweimal mit Wert 01, jeweils direkt nachdem das Licht angegangen sein duerfte (Helligkeit auf Maximum bei ausgeschaltetem Licht, und ein Moduswechsel). Wert 00 wurde nie beobachtet - die Deutung als Licht-Zustand ist plausibel, aber unbestaetigt."
       }
     ]
   },
@@ -246,7 +253,9 @@
           ]
         }
       ],
-      "verified": false
+      "verified": false,
+      "acknowledged": true,
+      "note": "Am Geraet bestaetigt: die Box quittiert 02 84 mit einem leeren Rahmen derselben Adresse (66 bzw. 205 ms). Sie kennt den Befehl also. Dass er BassUp schaltet, ist weiterhin vom Boom 3i uebernommen."
     },
     {
       "key": "eqPreset",
@@ -265,7 +274,8 @@
         }
       ],
       "verified": false,
-      "note": "Die Zuordnung Zahl -> Name ist fuer die Boom 2 unbekannt. Beim Durchprobieren hoeren, was passiert, und hier eintragen."
+      "note": "Am Geraet bestaetigt: 02 88 mit einem Byte wird quittiert (33 ms).",
+      "acknowledged": true
     },
     {
       "key": "customEqBand",
@@ -308,7 +318,8 @@
         }
       ],
       "verified": false,
-      "note": "Form aus dem Boom-3i-Mitschnitt: fe <maske_hoch> <maske_tief> <gain> <band> 0a."
+      "note": "Am Geraet bestaetigt: 02 88 mit sechs Byte wird ebenfalls quittiert (31 ms) - dieselbe Adresse nimmt beide Nutzlast-Formen an.",
+      "acknowledged": true
     },
     {
       "key": "lightOn",
@@ -336,7 +347,9 @@
           ]
         }
       ],
-      "verified": false
+      "verified": false,
+      "acknowledged": true,
+      "note": "Am Geraet bestaetigt: 0e 08 wird mit 00 und mit 01 quittiert (61/65 ms)."
     },
     {
       "key": "lightBrightness",
@@ -354,7 +367,9 @@
           "default": 128
         }
       ],
-      "verified": false
+      "verified": false,
+      "acknowledged": true,
+      "note": "Am Geraet bestaetigt: 0e 05 wird quittiert (28-117 ms). Bei Wert ff kam zusaetzlich die Meldung 0e 09 = 01."
     },
     {
       "key": "lightMode",
@@ -372,7 +387,9 @@
           "default": 0
         }
       ],
-      "verified": false
+      "verified": false,
+      "acknowledged": false,
+      "note": "Als einziger Schreibbefehl NICHT quittiert: 0e 07 mit Wert ff blieb ohne Bestaetigung, loeste aber die Meldung 0e 09 = 01 aus. Kurz darauf verstummte die Box ganz. Verdacht: ff ist kein gueltiger Modus. Der gueltige Wertebereich ist unbekannt - vorsichtig herantasten, mit kleinen Werten."
     },
     {
       "key": "pairedDevices1",
@@ -403,6 +420,8 @@
     "Die Dienst-UUID 0cf12d31-fac3-4553-bd80-d6832e7b3138 wurde am 2026-11-03 an einer echten Boom 2 bestaetigt: die Box bietet sie per SDP an und nimmt die Verbindung darauf an. uuidPrefix endet deshalb auf ...d6832e statt ...d6832e7d - die Boom 2 hat 7b, die Space 2 hat 7d, mein urspruengliches Praefix war ein Zeichen zu lang.",
     "Die Lesebefehle 0b:01 und 0b:02 sollen beim Space 2 die Kopplungsliste der Box zeigen, also welche Geraete sie sonst noch kennt. Ein Befehl zum Loeschen eines Eintrags ist in keiner Quelle beschrieben - wer die Liste leeren will, muss die Box zuruecksetzen.",
     "Die Box schickt von sich aus Meldungen: 01:03 Akku, 01:09 Lautstaerke, 02:04 BassUp. Sie stehen unter state.notifications und zeigen jeweils auf das Statusfeld mit derselben Bedeutung, damit es nur einen Decoder gibt. Erkannt wurden sie, indem ueber zwei Stunden die Wertemengen der Meldungen mit denen der Status-Bytes verglichen wurden.",
-    "match.serviceUuids traegt die Dienst-UUID, die diese Box tatsaechlich anbietet. Daran erkennt die App das Modell zuverlaessiger als am Namen, der frei waehlbar und bei zwei Geraeten desselben Modells gleich ist."
+    "match.serviceUuids traegt die Dienst-UUID, die diese Box tatsaechlich anbietet. Daran erkennt die App das Modell zuverlaessiger als am Namen, der frei waehlbar und bei zwei Geraeten desselben Modells gleich ist.",
+    "Die Box quittiert Schreibbefehle: auf jeden kommt ein leerer Rahmen mit derselben Befehlsadresse zurueck, innerhalb von 28 bis 205 ms. Fuenf der sechs Schreibbefehle tragen deshalb acknowledged=true - die Box kennt sie. Das ist ausdruecklich etwas anderes als verified: quittiert heisst verstanden, nicht 'tut was draufsteht'.",
+    "Beobachtet am 2026-11-06: die Box kann verstummen, ohne den Socket zu schliessen. Nach einem 0e 07 mit Wert ff kamen ueber 36 Sekunden auf zwoelf gesendete Rahmen null Antworten, und auch die Rahmen-Sondierung blieb stumm. Die App erkennt das jetzt daran, dass Befehle unbeantwortet bleiben."
   ]
 }

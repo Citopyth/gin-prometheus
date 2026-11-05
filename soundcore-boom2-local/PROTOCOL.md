@@ -126,6 +126,40 @@ Die Akku-Obergrenze 5 bleibt unbestaetigt: beobachtet wurden nur 2 und 1. Dass `
 genau 0 dB entspricht, passt zur Formel `120 + dB*10` aus Q4, ist aber nur durch einen
 flachen EQ belegt — ein verstelltes Band wuerde es beweisen.
 
+## Bestaetigungen
+
+**Am Geraet bestaetigt (2026-11-06):** die Boom 2 quittiert jeden Schreibbefehl. Die
+Antwort ist ein leerer Rahmen mit derselben Befehlsadresse, nach 28 bis 205 ms:
+
+```
+→ 08 ee 00 00 00 02 84 0b 00 00 87      02:84 mit Nutzlast 00
+← 09 ff 00 00 01 02 84 0a 00 99         02:84, kein Rumpf   = verstanden
+```
+
+Quittiert wurden `02:84`, `02:88` (sowohl mit einem als auch mit sechs Nutzbytes),
+`0e:08` und `0e:05`. Alle Rahmen stimmten in Laenge und Pruefsumme.
+
+**Was das heisst und was nicht.** Die Box hat fuer diese Adressen und Nutzlastformen
+einen Behandler — sie kennt die Befehle. Was der Behandler *tut*, sagt die Bestaetigung
+nicht. Dass `02:84` BassUp schaltet, stammt weiterhin aus dem Boom-3i-Mitschnitt. Das
+Profil trennt beides: `acknowledged` fuer "quittiert", `verified` fuer "Wirkung gesehen".
+
+**Nicht quittiert:** `0e:07` mit Wert `ff`. Es loeste die Meldung `0e:09 = 01` aus, blieb
+aber ohne Bestaetigung. Verdacht: `ff` ist kein gueltiger Lichtmodus. Der gueltige
+Wertebereich ist unbekannt.
+
+## Die Box kann verstummen, ohne aufzulegen
+
+**Beobachtet (2026-11-06):** nach dem nicht quittierten `0e:07 ff` kamen ueber 36
+Sekunden auf zwoelf gesendete Rahmen null Antworten. Die Rahmen-Sondierung blieb
+ebenfalls stumm. Der Socket blieb dabei offen, die Leseschleife lief weiter, und die App
+meldete jeden Rahmen als gesendet.
+
+Von aussen ist das von einer funktionierenden Verbindung nicht zu unterscheiden. Die App
+merkt es jetzt daran, dass Befehle unbeantwortet bleiben: jeder gesendete Befehl wird
+vermerkt, jede Antwort loescht ihn wieder, und was laenger als drei Sekunden offen
+bleibt, wird gemeldet.
+
 ## Meldungen, die die Box von sich aus schickt
 
 **Am Geraet bestaetigt (2026-11-05):** die Boom 2 wartet nicht auf Fragen.
@@ -135,6 +169,7 @@ flachen EQ belegt — ein verstelltes Band wuerde es beweisen.
 | `01:03` | 1 Byte | Akkustand | Werte `02 → 01`, identisch mit `body[1]` |
 | `01:09` | 1 Byte | Lautstaerke | Wert `1f` (31), identisch mit `body[0]`; fuenf Meldungen in einer Sekunde |
 | `02:04` | 1 Byte | BassUp | Werte `00 → 01`, identisch mit `body[3]` |
+| `0e:09` | 1 Byte | Licht an/aus (vermutet) | kam zweimal mit `01`, jeweils als das Licht angegangen sein duerfte. `00` nie beobachtet |
 
 In keiner der Quellen Q1–Q6 stehen diese drei. Sie sind aus dem Mitschnitt an echter
 Hardware erschlossen.
@@ -224,8 +259,11 @@ im Experten-Modus gesperrt bleibt.
   als Zustandsabfrage, und die Felder Lautstaerke, Akku, BassUp, Firmware,
   Seriennummer sowie die Lage der neun EQ-Baender. Dazu die drei Meldungen `01:03`,
   `01:09` und `02:04`, die in keiner Quelle stehen.
-- **Gemeldet, plausibel, ungeprueft:** die Licht-Offsets und **alle Schreibbefehle** —
-  es wurde noch nichts auf die Box geschrieben.
+- **Von der Box quittiert, Wirkung ungeprueft:** `02:84`, `02:88`, `0e:08`, `0e:05`.
+  Die Box kennt diese Befehle; dass ihre Namen stimmen, ist weiter vom Boom 3i
+  uebernommen.
+- **Gemeldet, plausibel, ungeprueft:** die Licht-Offsets, die Deutung von `0e:09`, und
+  der Lichtmodus-Befehl `0e:07`, der als einziger nicht quittiert wurde.
 - **Am Geraet bestaetigt:** Dienst-UUID `0cf12d31-fac3-4553-bd80-d6832e7b3138`,
   Modellnummer A3138, RFCOMM als Transport.
 - **Widerlegt:** `0cf12d31-…-d6832e7d3138` als UUID der Boom 2, und damit die Annahme,
