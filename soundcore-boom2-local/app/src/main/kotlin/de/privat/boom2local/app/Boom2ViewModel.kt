@@ -30,6 +30,7 @@ import de.privat.boom2local.protocol.Hex
 import de.privat.boom2local.protocol.LengthSemantics
 import de.privat.boom2local.protocol.PacketCodec
 import de.privat.boom2local.protocol.PolicyDecision
+import de.privat.boom2local.protocol.ProfileMatcher
 import de.privat.boom2local.protocol.RawMode
 import de.privat.boom2local.protocol.StateDecoder
 import de.privat.boom2local.protocol.TransportKind
@@ -52,8 +53,10 @@ sealed interface LinkState {
 
 /** Everything the screens render. */
 class UiState(
-    val loaded: LoadedProfile? = null,
-    val hasOverride: Boolean = false,
+    /** Every profile the app knows: shipped ones plus the ones you imported. */
+    val library: List<LoadedProfile> = emptyList(),
+    /** Set when you picked a profile by hand instead of letting the app choose. */
+    val manualProfileId: String? = null,
     val bluetoothSupported: Boolean = true,
     val bluetoothEnabled: Boolean = false,
     val permissionGranted: Boolean = false,
@@ -88,7 +91,24 @@ class UiState(
     val gattServices: List<GattService> = emptyList(),
     val message: String? = null,
 ) {
-    val profile: DeviceProfile? get() = loaded?.profile
+    /** Profiles that parsed and validated, in library order. */
+    val usableProfiles: List<DeviceProfile>
+        get() = library.mapNotNull { if (it.isUsable) it.profile else null }
+
+    /**
+     * The profile in force: your manual choice, else the one that recognised the
+     * selected speaker.
+     */
+    val active: LoadedProfile?
+        get() {
+            manualProfileId?.let { wanted ->
+                library.firstOrNull { it.id == wanted }?.let { return it }
+            }
+            val matched = selected?.match?.profile ?: return null
+            return library.firstOrNull { it.profile === matched }
+        }
+
+    val profile: DeviceProfile? get() = active?.profile
 }
 
 class Boom2ViewModel(application: Application) : AndroidViewModel(application) {
@@ -106,69 +126,85 @@ class Boom2ViewModel(application: Application) : AndroidViewModel(application) {
     val ui: StateFlow<UiState> = _ui.asStateFlow()
 
     init {
-        reloadProfile()
+        reloadLibrary()
     }
 
     // --- profile ----------------------------------------------------------------------
 
-    fun reloadProfile() {
-        val loaded = store.load()
-        val defaults = loaded.profile?.let(::defaultArguments) ?: emptyMap()
+    fun reloadLibrary() {
+        val library = store.load()
         _ui.update {
             UiState(
-                loaded = loaded,
-                hasOverride = store.hasOverride(),
+                library = library,
+                manualProfileId = it.manualProfileId?.takeIf { wanted ->
+                    library.any { entry -> entry.id == wanted }
+                },
                 bluetoothSupported = finder.bluetoothSupported,
                 bluetoothEnabled = finder.bluetoothEnabled,
                 permissionGranted = finder.hasConnectPermission(),
                 readOnly = it.readOnly,
                 rawMode = it.rawMode,
                 pinnedAddress = pins.read(),
-                arguments = defaults,
+                transport = it.transport,
                 audit = audit.snapshot(),
             )
         }
-        loaded.error?.let { note("Profil: $it") }
+        library.filter { it.error != null }.forEach { note("${it.source}: ${it.error}") }
         refreshDevices()
+        _ui.update { it.copyWith(arguments = argumentDefaults(it.usableProfiles)) }
     }
 
-    fun shippedProfileText(): String = try {
-        store.shippedText()
-    } catch (e: Exception) {
-        "// Profil nicht lesbar: ${e.message}"
+    /** Pick a profile by hand; null hands the choice back to the app. */
+    fun selectProfile(id: String?) {
+        audit.add(
+            AuditKind.INFO,
+            if (id == null) "Profilwahl wieder automatisch" else "Profil von Hand gewaehlt: $id",
+            timestampMs = now(),
+        )
+        _ui.update {
+            it.copyWith(manualProfileId = id, audit = audit.snapshot())
+                .let { next -> next.copyWith(arguments = argumentDefaults(next.usableProfiles)) }
+        }
     }
+
+    fun shippedProfileNames(): List<String> = store.shippedNames()
+
+    fun shippedProfileText(name: String): String = store.shippedText(name)
 
     fun importProfile(text: String) {
-        val result = store.saveOverride(text)
+        val result = store.import(text)
         if (!result.isUsable) {
-            val detail = result.error ?: result.problems.joinToString("; ")
-            note("Profil nicht uebernommen: $detail")
+            note("Profil nicht uebernommen: ${result.error ?: result.problems.joinToString("; ")}")
             return
         }
-        audit.add(AuditKind.INFO, "Profil ersetzt", timestampMs = now())
-        reloadProfile()
-        note("Profil uebernommen.")
+        audit.add(AuditKind.INFO, "Profil '${result.id}' importiert", timestampMs = now())
+        reloadLibrary()
+        note("Profil '${result.id}' uebernommen.")
     }
 
-    fun resetProfile() {
-        store.clearOverride()
-        audit.add(AuditKind.INFO, "Profil auf Lieferzustand zurueckgesetzt", timestampMs = now())
-        reloadProfile()
-        note("Mitgeliefertes Profil wird verwendet.")
+    fun removeProfile(entry: LoadedProfile) {
+        val fileName = entry.fileName ?: run { note("Mitgelieferte Profile lassen sich nicht loeschen."); return }
+        if (!store.remove(fileName)) {
+            note("Konnte $fileName nicht loeschen.")
+            return
+        }
+        audit.add(AuditKind.INFO, "Profil $fileName geloescht", timestampMs = now())
+        reloadLibrary()
+        note("Profil geloescht.")
     }
 
-    private fun defaultArguments(profile: DeviceProfile): Map<String, Map<String, Int>> =
-        profile.commands.associate { spec ->
-            spec.key to spec.arguments.associate { arg ->
-                arg.key to (arg.default ?: arg.choices.firstOrNull()?.value ?: arg.min)
+    private fun argumentDefaults(profiles: List<DeviceProfile>): Map<String, Map<String, Int>> =
+        profiles.flatMap { it.commands }.associate { spec ->
+            spec.key to spec.arguments.associate { argument ->
+                argument.key to (argument.default ?: argument.choices.firstOrNull()?.value ?: argument.min)
             }
         }
 
     // --- devices ----------------------------------------------------------------------
 
     fun refreshDevices() {
-        val profile = _ui.value.profile
-        val devices = if (profile == null) emptyList() else finder.pairedDevices(profile)
+        val profiles = _ui.value.usableProfiles
+        val devices = if (profiles.isEmpty()) emptyList() else finder.pairedDevices(profiles)
         _ui.update {
             it.copyWith(
                 bluetoothSupported = finder.bluetoothSupported,
@@ -196,12 +232,11 @@ class Boom2ViewModel(application: Application) : AndroidViewModel(application) {
      */
     fun refreshSdp() {
         val state = _ui.value
-        val profile = state.profile ?: return
         val selected = state.selected ?: run { note("Kein Geraet ausgewaehlt."); return }
         _ui.update { it.copyWith(sdpBusy = true, sdpNote = null) }
         viewModelScope.launch {
             val result = finder.refreshSdp(selected.device)
-            val updated = finder.describe(selected.device, profile, result.uuids)
+            val updated = finder.describe(selected.device, _ui.value.usableProfiles, result.uuids)
             audit.add(
                 if (result.fresh) AuditKind.INFO else AuditKind.ERROR,
                 "SDP-Abfrage ${selected.name}: ${result.uuids.size} Dienst(e), " +
@@ -270,6 +305,7 @@ class Boom2ViewModel(application: Application) : AndroidViewModel(application) {
             appendLine("Adresse: ${selected.address}")
             appendLine("Passt zum Profil: ${selected.matchesProfile}")
             appendLine("Gebunden: ${_ui.value.pinnedAddress ?: "nein"}")
+            appendLine("Profil: ${_ui.value.active?.profile?.displayName ?: "keines"}")
             appendLine("Dienste laut SDP: ${selected.allUuids.size}")
             for (described in BluetoothServices.describeAll(selected.allUuids)) {
                 appendLine("  ${described.uuid}")
@@ -312,7 +348,7 @@ class Boom2ViewModel(application: Application) : AndroidViewModel(application) {
                 pinnedAddress = state.pinnedAddress,
                 address = device.address,
                 name = device.name,
-                match = profile.match,
+                recognised = device.matchesProfile || state.manualProfileId != null,
             )
         ) {
             is GateDecision.Refused -> {
@@ -783,8 +819,8 @@ class Boom2ViewModel(application: Application) : AndroidViewModel(application) {
  * holds is never compared or hashed by Compose; this is the explicit copy it needs.
  */
 private fun UiState.copyWith(
-    loaded: LoadedProfile? = this.loaded,
-    hasOverride: Boolean = this.hasOverride,
+    library: List<LoadedProfile> = this.library,
+    manualProfileId: String? = this.manualProfileId,
     bluetoothSupported: Boolean = this.bluetoothSupported,
     bluetoothEnabled: Boolean = this.bluetoothEnabled,
     permissionGranted: Boolean = this.permissionGranted,
@@ -810,8 +846,8 @@ private fun UiState.copyWith(
     gattServices: List<GattService> = this.gattServices,
     message: String? = this.message,
 ): UiState = UiState(
-    loaded = loaded,
-    hasOverride = hasOverride,
+    library = library,
+    manualProfileId = manualProfileId,
     bluetoothSupported = bluetoothSupported,
     bluetoothEnabled = bluetoothEnabled,
     permissionGranted = permissionGranted,

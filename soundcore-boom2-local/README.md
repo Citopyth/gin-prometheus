@@ -178,6 +178,43 @@ Bluetooth-Adresse und lehnt jedes andere Geraet ab, auch eine zweite Boom 2 mit
 demselben Namen. Namen taugen dafuer nicht — sie sind frei waehlbar und bei zwei
 Geraeten desselben Modells identisch.
 
+## Mehrere Geraete, mehrere Profile
+
+Ein Geraeteprofil ist eine JSON-Datei, kein Code. Die App traegt deshalb eine Bibliothek
+davon und sucht beim Verbinden selbst das passende heraus.
+
+Ausgeliefert werden zwei:
+
+| Profil | Greift bei | Schreibbefehle |
+|---|---|---|
+| **Soundcore Boom 2** | Geraeten, die `0cf12d31-…-d6832e7b3138` anbieten | 6 |
+| **Soundcore (unbekanntes Modell)** | jedem Geraet mit dem Hersteller-Praefix `0cf12d31-…-d6832e` | **keine** |
+
+**Erkannt wird am Dienst, nicht am Namen.** Ein Name laesst sich auf alles umstellen und
+ist bei zwei Geraeten desselben Modells gleich; die Dienst-UUID steht in der Firmware
+und traegt bei Soundcore sogar die Modellnummer. Die Rangfolge:
+
+1. Das Geraet bietet genau den Dienst an, den ein Profil nennt → es ist dieses Modell
+2. Es bietet einen Dienst mit dem Hersteller-Praefix an → richtiger Hersteller, Modell offen
+3. Nur der Name passt → schwaechster Treffer
+
+Ein umbenannter Lautsprecher wird deshalb weiter erkannt, und ein fremdes Geraet mit
+zufaellig passendem Namen nicht.
+
+**Das generische Profil enthaelt absichtlich keinen einzigen Schreibbefehl.** Weil die
+App nur sendet, was im Profil steht, kann sie damit auf einem unbekannten Modell nichts
+veraendern — lesen und zuhoeren, mehr nicht. Auf einem Geraet, dessen Protokoll niemand
+kartografiert hat, waere jeder Schreibzugriff ein Schuss ins Dunkle.
+
+Im Reiter *Sicherheit* kannst du die Bibliothek sehen, ein Profil von Hand erzwingen,
+jedes kopieren, eigene hinzufuegen und eigene wieder loeschen. Ein eigenes Profil mit
+derselben Kennung ueberschreibt das mitgelieferte und ueberlebt damit ein App-Update.
+
+**Ein weiteres Geraet aufnehmen:** ein mitgeliefertes Profil kopieren, `id`,
+`displayName`, `match.serviceUuids` und die Byte-Offsets anpassen, einfuegen. Was dabei
+zu tun ist, steht unter *Protokoll kartografieren*; der Weg ueber die Rohbytes im Reiter
+*Protokoll* ist derselbe wie bei der Boom 2.
+
 ## Zwei Transportwege
 
 Die App kann die Frames ueber beide Bluetooth-Wege schicken, umschaltbar im Reiter

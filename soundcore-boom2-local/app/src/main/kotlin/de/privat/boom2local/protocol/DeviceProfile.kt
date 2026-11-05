@@ -166,6 +166,13 @@ data class DeviceMatch(
     val namePatterns: List<String> = emptyList(),
     /** Only offer devices that are already paired, so no scan permission is needed. */
     val requireBonded: Boolean = true,
+    /**
+     * Exact service UUIDs that identify this model.
+     *
+     * The strongest signal there is: a name can be changed and is shared by every unit
+     * of a model, while this is in the firmware. See [ProfileMatcher].
+     */
+    val serviceUuids: List<String> = emptyList(),
 ) {
     fun matches(bluetoothName: String?): Boolean {
         val name = bluetoothName?.lowercase() ?: return false

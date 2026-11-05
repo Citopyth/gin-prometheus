@@ -4,24 +4,40 @@ import java.io.File
 
 object TestFixtures {
 
-    private const val ASSET_PATH = "app/src/main/assets/profiles/boom2.json"
+    private const val ASSET_DIRECTORY = "app/src/main/assets/profiles"
 
     /**
-     * The profile the app actually ships. Resolved by walking up from the working
-     * directory, so the tests pass whether Gradle runs them from `protocol-verify/`, from
-     * the project root, or from the app module.
+     * The directory the app ships its profiles from. Resolved by walking up from the
+     * working directory, so the tests pass whether Gradle runs them from
+     * `protocol-verify/`, from the project root, or from the app module.
      */
-    val profileFile: File = run {
+    val profileDirectory: File = run {
         var dir: File? = File("").absoluteFile
         while (dir != null) {
-            val candidate = File(dir, ASSET_PATH)
-            if (candidate.isFile) return@run candidate
+            val candidate = File(dir, ASSET_DIRECTORY)
+            if (candidate.isDirectory) return@run candidate
             dir = dir.parentFile
         }
-        File(ASSET_PATH).absoluteFile
+        File(ASSET_DIRECTORY).absoluteFile
     }
 
-    fun boom2Profile(): DeviceProfile = DeviceProfile.parse(profileFile.readText())
+    /** The file the Boom 2 profile ships in. */
+    val profileFile: File get() = File(profileDirectory, "boom2.json")
+
+    fun profile(name: String): DeviceProfile =
+        DeviceProfile.parse(File(profileDirectory, "$name.json").readText())
+
+    fun boom2Profile(): DeviceProfile = profile("boom2")
+
+    fun genericProfile(): DeviceProfile = profile("soundcore-generic")
+
+    /** Every profile the app ships, as the library would load them. */
+    fun allProfiles(): List<DeviceProfile> = profileDirectory
+        .listFiles { file -> file.extension == "json" }
+        .orEmpty()
+        .sortedBy { it.name }
+        .map { DeviceProfile.parse(it.readText()) }
+
 
     /**
      * The body of a state frame captured from a real Soundcore Boom 2 on 2026-11-05.

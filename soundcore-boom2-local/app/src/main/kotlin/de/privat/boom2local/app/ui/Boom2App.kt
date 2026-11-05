@@ -49,6 +49,7 @@ import de.privat.boom2local.app.LinkState
 import de.privat.boom2local.app.SelfCheck
 import de.privat.boom2local.app.UiState
 import de.privat.boom2local.protocol.BluetoothServices
+import de.privat.boom2local.protocol.CommandKind
 import de.privat.boom2local.protocol.GattSelector
 import de.privat.boom2local.protocol.TransportPreference
 
@@ -120,17 +121,41 @@ private fun DeviceTab(
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         val profile = state.profile
-        val loaded = state.loaded
+        val active = state.active
 
-        SectionCard("Profil", loaded?.source) {
+        SectionCard(
+            "Profil",
+            active?.source ?: "${state.library.size} Profile in der Bibliothek",
+        ) {
             if (profile == null) {
-                Note(loaded?.error ?: "Kein Profil geladen.", warning = true)
+                Note(
+                    if (state.selected == null) {
+                        "Waehle unten ein Geraet - die App sucht dann selbst das passende " +
+                            "Profil heraus."
+                    } else {
+                        "Kein Profil erkennt dieses Geraet. Im Reiter Sicherheit kannst du " +
+                            "eines von Hand waehlen oder ein eigenes importieren."
+                    },
+                    warning = state.selected != null,
+                )
             } else {
                 KeyValue("Geraet", profile.displayName)
                 KeyValue("Modell", profile.model ?: "unbekannt")
                 KeyValue("Erlaubte Befehle", profile.commands.size.toString())
-                KeyValue("Gesperrte Befehle", profile.blockedCommands.size.toString())
-                val problems = loaded?.problems ?: emptyList()
+                KeyValue(
+                    "Davon schreibend",
+                    profile.commands.count { it.kind == CommandKind.WRITE }.toString(),
+                )
+                val how = state.manualProfileId?.let { "von Hand gewaehlt" }
+                    ?: state.selected?.match?.reason?.let { "erkannt an: $it" }
+                if (how != null) Note(how)
+                if (profile.commands.none { it.kind == CommandKind.WRITE }) {
+                    Note(
+                        "Dieses Profil enthaelt keinen Schreibbefehl. Die App kann damit " +
+                            "nur lesen und zuhoeren.",
+                    )
+                }
+                val problems = active?.problems ?: emptyList()
                 if (problems.isNotEmpty()) {
                     HorizontalDivider()
                     Note("Profil-Fehler:", warning = true)
@@ -193,9 +218,9 @@ private fun DeviceTab(
                         Mono(device.address)
                         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             if (device.matchesProfile) {
-                                Tag("passt zum Profil")
+                                Tag("Profil vorhanden")
                             } else {
-                                Tag("anderes Geraet", warning = true)
+                                Tag("kein Profil", warning = true)
                             }
                             when {
                                 device.customUuids.isNotEmpty() ->
@@ -206,6 +231,9 @@ private fun DeviceTab(
 
                                 else -> Tag("nur Standardprofile", warning = true)
                             }
+                        }
+                        device.match?.let { matched ->
+                            Note("Profil: ${matched.profile.displayName} (${matched.reason})")
                         }
                         if (selected) {
                             if (device.allUuids.isEmpty()) {
@@ -510,18 +538,63 @@ private fun SecurityTab(state: UiState, model: Boom2ViewModel) {
         }
 
         SectionCard(
-            "Profil bearbeiten",
-            "Reverse-engineerte Offsets korrigierst du hier, ohne die App neu zu bauen.",
+            "Profil-Bibliothek",
+            "${state.library.size} Profile. Welches gilt, entscheidet normalerweise die " +
+                "App anhand der Dienste, die ein Geraet anbietet.",
         ) {
-            KeyValue("Eigenes Profil aktiv", if (state.hasOverride) "ja" else "nein")
-            OutlinedButton(
-                onClick = {
-                    clipboard.setText(AnnotatedString(model.shippedProfileText()))
-                    model.note("Mitgeliefertes Profil in die Zwischenablage kopiert.")
-                },
-            ) {
-                Text("Mitgeliefertes Profil kopieren")
+            Text("Profilwahl", style = MaterialTheme.typography.bodyMedium)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilterChip(
+                    selected = state.manualProfileId == null,
+                    onClick = { model.selectProfile(null) },
+                    label = { Text("automatisch") },
+                )
+                for (entry in state.library) {
+                    val id = entry.id ?: continue
+                    FilterChip(
+                        selected = state.manualProfileId == id,
+                        onClick = { model.selectProfile(id) },
+                        label = { Text(entry.profile?.displayName ?: id) },
+                    )
+                }
             }
+            HorizontalDivider()
+            for (entry in state.library) {
+                val isActive = state.active === entry
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(
+                        entry.profile?.displayName ?: "(unlesbar)",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    if (isActive) Tag("aktiv")
+                    if (entry.removable) Tag("eigenes")
+                }
+                Mono(entry.source)
+                entry.error?.let { Note(it, warning = true) }
+                for (problem in entry.problems) Note("- $problem", warning = true)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(
+                        onClick = {
+                            clipboard.setText(AnnotatedString(entry.text.orEmpty()))
+                            model.note("${entry.profile?.displayName} kopiert.")
+                        },
+                        enabled = entry.text != null,
+                    ) {
+                        Text("Kopieren")
+                    }
+                    if (entry.removable) {
+                        OutlinedButton(onClick = { model.removeProfile(entry) }) {
+                            Text("Loeschen")
+                        }
+                    }
+                }
+                HorizontalDivider()
+            }
+            Note(
+                "Ein eigenes Profil mit derselben Kennung ueberschreibt das mitgelieferte " +
+                    "und ueberlebt damit ein App-Update. Loeschst du es, gilt wieder das " +
+                    "mitgelieferte.",
+            )
             OutlinedTextField(
                 value = profileText,
                 onValueChange = { profileText = it },
@@ -530,22 +603,19 @@ private fun SecurityTab(state: UiState, model: Boom2ViewModel) {
                 minLines = 3,
                 maxLines = 8,
             )
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(
-                    onClick = { model.importProfile(profileText) },
-                    enabled = profileText.isNotBlank(),
-                ) {
-                    Text("Uebernehmen")
-                }
-                OutlinedButton(
-                    onClick = {
-                        profileText = ""
-                        model.resetProfile()
-                    },
-                ) {
-                    Text("Zuruecksetzen")
-                }
+            Button(
+                onClick = {
+                    model.importProfile(profileText)
+                    profileText = ""
+                },
+                enabled = profileText.isNotBlank(),
+            ) {
+                Text("Hinzufuegen")
             }
+            Note(
+                "Die App prueft ein Profil, bevor sie es speichert - ein Tippfehler kann " +
+                    "sie also nicht lahmlegen.",
+            )
         }
     }
 }

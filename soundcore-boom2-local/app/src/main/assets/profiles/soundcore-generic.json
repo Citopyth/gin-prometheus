@@ -1,0 +1,147 @@
+{
+  "profileVersion": 1,
+  "id": "soundcore-generic",
+  "displayName": "Soundcore (unbekanntes Modell)",
+  "model": null,
+  "match": {
+    "namePatterns": [
+      "soundcore"
+    ],
+    "requireBonded": true,
+    "serviceUuids": []
+  },
+  "transport": {
+    "uuidPrefix": "0cf12d31-fac3-4553-bd80-d6832e",
+    "fallbackUuids": [],
+    "insecureSocket": true,
+    "connectTimeoutMs": 12000,
+    "connectAttempts": 3
+  },
+  "ble": {
+    "enabled": true,
+    "serviceUuids": [],
+    "writeCharacteristicUuid": null,
+    "notifyCharacteristicUuid": null,
+    "blockedServiceUuids": [
+      "0000fe59-0000-1000-8000-00805f9b34fb",
+      "00001530-1212-efde-1523-785feabcd123"
+    ],
+    "requestMtu": 517
+  },
+  "framing": {
+    "outboundHeader": "08 ee 00 00 00",
+    "inboundHeader": "09 ff 00 00 01",
+    "lengthSemantics": "TOTAL",
+    "maxFrameSize": 2048,
+    "handshake": []
+  },
+  "state": {
+    "requestCommand": "01 01",
+    "responseCommand": "01 01",
+    "fields": [
+      {
+        "key": "volume",
+        "label": "Lautstaerke",
+        "type": "U8",
+        "offset": 0,
+        "verified": false,
+        "note": "Offset von der Boom 2 uebernommen und fuer dieses Modell ungeprueft. Die Rohbytes stehen darunter - stimmt der Wert nicht, ist der Offset falsch."
+      },
+      {
+        "key": "batteryLevel",
+        "label": "Akku",
+        "type": "U8",
+        "offset": 1,
+        "scaleMax": 5,
+        "verified": false,
+        "note": "Offset von der Boom 2 uebernommen und fuer dieses Modell ungeprueft. Die Rohbytes stehen darunter - stimmt der Wert nicht, ist der Offset falsch."
+      },
+      {
+        "key": "bassUp",
+        "label": "BassUp",
+        "type": "BOOL",
+        "offset": 3,
+        "verified": false,
+        "note": "Offset von der Boom 2 uebernommen und fuer dieses Modell ungeprueft. Die Rohbytes stehen darunter - stimmt der Wert nicht, ist der Offset falsch."
+      },
+      {
+        "key": "firmware",
+        "label": "Firmware",
+        "type": "ASCII",
+        "offset": 7,
+        "length": 5,
+        "verified": false,
+        "note": "Offset von der Boom 2 uebernommen und fuer dieses Modell ungeprueft. Die Rohbytes stehen darunter - stimmt der Wert nicht, ist der Offset falsch."
+      },
+      {
+        "key": "serial",
+        "label": "Seriennummer",
+        "type": "ASCII",
+        "offset": 12,
+        "length": 16,
+        "verified": false,
+        "note": "Offset von der Boom 2 uebernommen und fuer dieses Modell ungeprueft. Die Rohbytes stehen darunter - stimmt der Wert nicht, ist der Offset falsch."
+      }
+    ],
+    "notifications": [
+      {
+        "command": "01 03",
+        "field": "batteryLevel",
+        "offset": 0,
+        "verified": false,
+        "note": "Bei der Boom 2 der Akkustand. Fuer dieses Modell ungeprueft."
+      },
+      {
+        "command": "01 09",
+        "field": "volume",
+        "offset": 0,
+        "verified": false,
+        "note": "Bei der Boom 2 die Lautstaerke. Fuer dieses Modell ungeprueft."
+      },
+      {
+        "command": "02 04",
+        "field": "bassUp",
+        "offset": 0,
+        "verified": false,
+        "note": "Bei der Boom 2 BassUp. Fuer dieses Modell ungeprueft."
+      }
+    ]
+  },
+  "commands": [
+    {
+      "key": "readState",
+      "label": "Status lesen",
+      "command": "01 01",
+      "kind": "READ",
+      "payloadTemplate": "",
+      "verified": false,
+      "note": "Bei Space 2, Boom 2 und Boom 3i die Zustands-Abfrage."
+    },
+    {
+      "key": "pairedDevices1",
+      "label": "Kopplungsliste lesen (1)",
+      "command": "0b 01",
+      "kind": "READ",
+      "payloadTemplate": "",
+      "verified": false,
+      "note": "Quelle Q4, ungeprueft."
+    },
+    {
+      "key": "pairedDevices2",
+      "label": "Kopplungsliste lesen (2)",
+      "command": "0b 02",
+      "kind": "READ",
+      "payloadTemplate": "",
+      "verified": false,
+      "note": "Quelle Q4, ungeprueft."
+    }
+  ],
+  "blockedCommands": [],
+  "maxRawPayloadBytes": 64,
+  "notes": [
+    "Auffangprofil fuer Soundcore-Geraete, deren Modell die App nicht kennt. Es greift, sobald ein Geraet einen Dienst mit dem Hersteller-Praefix anbietet.",
+    "Es enthaelt absichtlich KEINEN einzigen Schreibbefehl. Weil die App nur sendet, was im Profil steht, kann sie mit diesem Profil nichts am Geraet veraendern - lesen und zuhoeren, mehr nicht. Das ist der Sinn: auf einem unbekannten Modell waere jeder Schreibzugriff ein Schuss ins Dunkle.",
+    "Alle Byte-Offsets stammen von der Boom 2 und sind hier unbestaetigt. Sie dienen als Startpunkt: stimmt ein Wert nicht, zeigt der Reiter Protokoll die Rohbytes, aus denen sich der richtige Offset ablesen laesst.",
+    "blockedCommands ist leer, weil kein Firmware-Befehl bekannt ist. Das ist keine Luecke: ohne Schreibbefehle im Profil sendet die App ohnehin nichts."
+  ]
+}

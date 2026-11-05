@@ -13,6 +13,8 @@ import android.os.Build
 import android.os.ParcelUuid
 import androidx.core.content.ContextCompat
 import de.privat.boom2local.protocol.DeviceProfile
+import de.privat.boom2local.protocol.ProfileMatch
+import de.privat.boom2local.protocol.ProfileMatcher
 import de.privat.boom2local.protocol.ServiceCandidates
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.withTimeoutOrNull
@@ -23,26 +25,31 @@ class FoundDevice(
     val device: BluetoothDevice,
     val name: String,
     val address: String,
-    /** True when the name matches the loaded profile. */
-    val matchesProfile: Boolean,
-    /** An advertised service matching the profile's vendor prefix, if there is one. */
-    val vendorUuid: String?,
     /** Everything the device's SDP record offers. */
     val allUuids: List<String>,
+    /** The profile that recognised this device, and why. Null when none did. */
+    val match: ProfileMatch?,
 ) {
+    val profile: DeviceProfile? get() = match?.profile
+
+    val matchesProfile: Boolean get() = match != null
+
     /**
      * Advertised services that are not standard Bluetooth profiles.
      *
      * A UUID ending in the Bluetooth base suffix is a registered profile — A2DP, AVRCP,
      * handsfree and so on. Anything else was made up by the manufacturer, which makes it
-     * the only plausible place for a proprietary control channel. This matters more than
-     * the profile's vendor prefix: that prefix is a guess from other models, while this
-     * is a property of the service itself.
+     * the only plausible home for a proprietary control channel.
      */
     val customUuids: List<String> = allUuids.filter { ServiceCandidates.isCustom(it) }
 
     /** The standard Serial Port Profile, a common fallback for vendor protocols. */
     val sppUuid: String? = allUuids.firstOrNull { ServiceCandidates.isSerialPort(it) }
+
+    /** An advertised service matching the matched profile's vendor prefix. */
+    val vendorUuid: String? = match?.profile?.transport?.uuidPrefix
+        ?.trim()?.lowercase()?.takeIf { it.isNotEmpty() }
+        ?.let { prefix -> allUuids.firstOrNull { it.startsWith(prefix) } }
 }
 
 /** Outcome of a fresh SDP query. */
@@ -77,8 +84,8 @@ class DeviceFinder(private val context: Context) {
             context.checkSelfPermission(connectPermission) == PackageManager.PERMISSION_GRANTED
         }
 
-    /** Paired devices, the ones matching the profile first. */
-    fun pairedDevices(profile: DeviceProfile): List<FoundDevice> {
+    /** Paired devices, best recognised first. */
+    fun pairedDevices(profiles: List<DeviceProfile>): List<FoundDevice> {
         val a = adapter ?: return emptyList()
         if (!hasConnectPermission()) return emptyList()
         val bonded = try {
@@ -87,9 +94,9 @@ class DeviceFinder(private val context: Context) {
             return emptyList()
         }
         return bonded
-            .map { describe(it, profile, cachedUuids(it)) }
+            .map { describe(it, profiles, cachedUuids(it)) }
             .sortedWith(
-                compareByDescending<FoundDevice> { it.matchesProfile }
+                compareByDescending<FoundDevice> { it.match?.score ?: 0 }
                     .thenByDescending { it.customUuids.isNotEmpty() }
                     .thenBy { it.name },
             )
@@ -97,7 +104,7 @@ class DeviceFinder(private val context: Context) {
 
     fun describe(
         device: BluetoothDevice,
-        profile: DeviceProfile,
+        profiles: List<DeviceProfile>,
         uuids: List<String>,
     ): FoundDevice {
         val name = try {
@@ -105,14 +112,12 @@ class DeviceFinder(private val context: Context) {
         } catch (e: SecurityException) {
             null
         }
-        val prefix = profile.transport.uuidPrefix.lowercase()
         return FoundDevice(
             device = device,
             name = name ?: "(Name nicht lesbar)",
             address = device.address,
-            matchesProfile = profile.match.matches(name),
-            vendorUuid = uuids.firstOrNull { prefix.isNotEmpty() && it.startsWith(prefix) },
             allUuids = uuids,
+            match = ProfileMatcher.best(profiles, name, uuids),
         )
     }
 

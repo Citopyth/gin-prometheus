@@ -8,7 +8,10 @@
       "soundcore boom 2",
       "boom 2"
     ],
-    "requireBonded": true
+    "requireBonded": true,
+    "serviceUuids": [
+      "0cf12d31-fac3-4553-bd80-d6832e7b3138"
+    ]
   },
   "transport": {
     "uuidPrefix": "0cf12d31-fac3-4553-bd80-d6832e",
@@ -399,6 +402,7 @@
     "Der BLE-Pfad waehlt den Steuerdienst selbst: ein nicht-standardisierter GATT-Dienst mit je einer beschreibbaren und einer meldenden Eigenschaft. serviceUuids bleibt leer, bis ein Mitschnitt den richtigen Dienst zeigt - dann hier eintragen. blockedServiceUuids sperrt Nordic Secure DFU und das aeltere DFU-Profil, also die Dienste, ueber die Firmware uebertragen wird; die Liste ist nicht vollstaendig, und ein als Updater erkannter Dienst gehoert ebenfalls hinein.",
     "Die Dienst-UUID 0cf12d31-fac3-4553-bd80-d6832e7b3138 wurde am 2026-11-03 an einer echten Boom 2 bestaetigt: die Box bietet sie per SDP an und nimmt die Verbindung darauf an. uuidPrefix endet deshalb auf ...d6832e statt ...d6832e7d - die Boom 2 hat 7b, die Space 2 hat 7d, mein urspruengliches Praefix war ein Zeichen zu lang.",
     "Die Lesebefehle 0b:01 und 0b:02 sollen beim Space 2 die Kopplungsliste der Box zeigen, also welche Geraete sie sonst noch kennt. Ein Befehl zum Loeschen eines Eintrags ist in keiner Quelle beschrieben - wer die Liste leeren will, muss die Box zuruecksetzen.",
-    "Die Box schickt von sich aus Meldungen: 01:03 Akku, 01:09 Lautstaerke, 02:04 BassUp. Sie stehen unter state.notifications und zeigen jeweils auf das Statusfeld mit derselben Bedeutung, damit es nur einen Decoder gibt. Erkannt wurden sie, indem ueber zwei Stunden die Wertemengen der Meldungen mit denen der Status-Bytes verglichen wurden."
+    "Die Box schickt von sich aus Meldungen: 01:03 Akku, 01:09 Lautstaerke, 02:04 BassUp. Sie stehen unter state.notifications und zeigen jeweils auf das Statusfeld mit derselben Bedeutung, damit es nur einen Decoder gibt. Erkannt wurden sie, indem ueber zwei Stunden die Wertemengen der Meldungen mit denen der Status-Bytes verglichen wurden.",
+    "match.serviceUuids traegt die Dienst-UUID, die diese Box tatsaechlich anbietet. Daran erkennt die App das Modell zuverlaessiger als am Namen, der frei waehlbar und bei zwei Geraeten desselben Modells gleich ist."
   ]
 }

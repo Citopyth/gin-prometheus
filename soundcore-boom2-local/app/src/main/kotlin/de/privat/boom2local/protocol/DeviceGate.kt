@@ -31,11 +31,15 @@ object DeviceGate {
         return normalise(address) == wanted
     }
 
+    /**
+     * @param recognised whether any profile in the library recognised this device.
+     *   With a pin set this does not matter: the pin is the stronger statement.
+     */
     fun check(
         pinnedAddress: String?,
         address: String?,
         name: String?,
-        match: DeviceMatch,
+        recognised: Boolean,
     ): GateDecision {
         val pinned = normalise(pinnedAddress)
         val candidate = normalise(address)
@@ -59,10 +63,10 @@ object DeviceGate {
                 )
             }
         }
-        if (!match.matches(name)) {
+        if (!recognised) {
             return GateDecision.Refused(
-                "profile-mismatch",
-                "\"${name ?: "(ohne Namen)"}\" passt nicht zum Profil.",
+                "no-profile",
+                "Kein Profil erkennt \"${name ?: "(ohne Namen)"}\".",
             )
         }
         return GateDecision.Allowed
