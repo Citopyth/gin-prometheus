@@ -30,6 +30,7 @@ import de.privat.boom2local.protocol.Hex
 import de.privat.boom2local.protocol.LengthSemantics
 import de.privat.boom2local.protocol.PacketCodec
 import de.privat.boom2local.protocol.PolicyDecision
+import de.privat.boom2local.protocol.ProfileEntry
 import de.privat.boom2local.protocol.ProfileMatcher
 import de.privat.boom2local.protocol.RawMode
 import de.privat.boom2local.protocol.StateDecoder
@@ -54,7 +55,7 @@ sealed interface LinkState {
 /** Everything the screens render. */
 class UiState(
     /** Every profile the app knows: shipped ones plus the ones you imported. */
-    val library: List<LoadedProfile> = emptyList(),
+    val library: List<ProfileEntry> = emptyList(),
     /** Set when you picked a profile by hand instead of letting the app choose. */
     val manualProfileId: String? = null,
     val bluetoothSupported: Boolean = true,
@@ -99,7 +100,7 @@ class UiState(
      * The profile in force: your manual choice, else the one that recognised the
      * selected speaker.
      */
-    val active: LoadedProfile?
+    val active: ProfileEntry?
         get() {
             manualProfileId?.let { wanted ->
                 library.firstOrNull { it.id == wanted }?.let { return it }
@@ -182,7 +183,7 @@ class Boom2ViewModel(application: Application) : AndroidViewModel(application) {
         note("Profil '${result.id}' uebernommen.")
     }
 
-    fun removeProfile(entry: LoadedProfile) {
+    fun removeProfile(entry: ProfileEntry) {
         val fileName = entry.fileName ?: run { note("Mitgelieferte Profile lassen sich nicht loeschen."); return }
         if (!store.remove(fileName)) {
             note("Konnte $fileName nicht loeschen.")
@@ -819,7 +820,7 @@ class Boom2ViewModel(application: Application) : AndroidViewModel(application) {
  * holds is never compared or hashed by Compose; this is the explicit copy it needs.
  */
 private fun UiState.copyWith(
-    library: List<LoadedProfile> = this.library,
+    library: List<ProfileEntry> = this.library,
     manualProfileId: String? = this.manualProfileId,
     bluetoothSupported: Boolean = this.bluetoothSupported,
     bluetoothEnabled: Boolean = this.bluetoothEnabled,
