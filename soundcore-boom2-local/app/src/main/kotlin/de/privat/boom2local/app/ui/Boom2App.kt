@@ -458,6 +458,7 @@ private fun DeviceTab(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun SecurityTab(state: UiState, model: Boom2ViewModel) {
     val context = LocalContext.current
