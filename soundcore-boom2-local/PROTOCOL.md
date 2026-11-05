@@ -148,6 +148,29 @@ Profil trennt beides: `acknowledged` fuer "quittiert", `verified` fuer "Wirkung 
 aber ohne Bestaetigung. Verdacht: `ff` ist kein gueltiger Lichtmodus. Der gueltige
 Wertebereich ist unbekannt.
 
+## Der erste Rahmen nach dem Verbinden geht oft verloren
+
+**Beobachtet ueber vier Sitzungen (2026-11-05/06):**
+
+| Sitzung | Verbindung → erster Rahmen | Antwort |
+|---|---|---|
+| 1 | 0 ms | nach 88 ms |
+| 2 | 1 ms | nach 53 ms |
+| 3 | 2 ms | **keine** |
+| 4 | 1 ms | **keine** |
+
+Gleicher Code, gleicher Abstand, zweimal Antwort und zweimal nicht. Dass der Kanal in
+Ordnung war, zeigt Sitzung 3: 26 Sekunden spaeter wurde jeder Schreibbefehl quittiert.
+Der Socket ist also offen, bevor der Steuerdienst der Box zuhoert.
+
+Zwei Gegenmassnahmen, beide im Profil bzw. getestet:
+
+- `transport.settleAfterConnectMs` — eine halbe Sekunde Pause nach dem Socket-Aufbau,
+  bevor irgendetwas gesendet wird.
+- Unbeantwortete **Lesebefehle** werden bis zu zweimal wiederholt. Schreibbefehle nie:
+  eine Frage zweimal zu stellen aendert nichts, einen Schreibzugriff zu wiederholen
+  dagegen moeglicherweise schon.
+
 ## Die Box kann verstummen, ohne aufzulegen
 
 **Beobachtet (2026-11-06):** nach dem nicht quittierten `0e:07 ff` kamen ueber 36

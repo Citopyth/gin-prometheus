@@ -266,6 +266,17 @@ class ProfileFileTest {
     }
 
     @Test
+    fun `the profile waits before sending its first frame`() {
+        // The speaker ignored the first frame in two of four captures when it went out
+        // within 2 ms of the socket opening.
+        assertTrue(
+            profile.transport.settleAfterConnectMs >= 200,
+            "got ${profile.transport.settleAfterConnectMs} ms",
+        )
+        assertTrue(profile.transport.settleAfterConnectMs <= 2_000, "and not so long it drags")
+    }
+
+    @Test
     fun `the blocklist is empty but documented`() {
         assertEquals(emptyList(), profile.blockedCommands)
         assertTrue(

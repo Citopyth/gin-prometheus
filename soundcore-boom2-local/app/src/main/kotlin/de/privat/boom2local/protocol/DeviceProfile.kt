@@ -102,6 +102,10 @@ data class DeviceProfile(
         if (ble.requestMtu !in 23..517) {
             problems += "ble.requestMtu must be in 23..517, got ${ble.requestMtu}"
         }
+        if (transport.settleAfterConnectMs !in 0..10_000) {
+            problems += "transport.settleAfterConnectMs must be in 0..10000, got " +
+                "${transport.settleAfterConnectMs}"
+        }
         for (spec in blockedCommands) {
             check("blockedCommands['$spec']") { Command.parse(spec) }
         }
@@ -196,6 +200,15 @@ data class TransportSpec(
     val connectTimeoutMs: Long = 12_000,
     /** Soundcore devices accept one control client at a time; retry a failed connect. */
     val connectAttempts: Int = 3,
+    /**
+     * How long to wait after the socket opens before sending anything.
+     *
+     * The socket being up does not mean the speaker's control service is listening. In
+     * four captures the first frame went out within 2 ms of connecting and was ignored
+     * half the time, while everything sent later on the same connection was answered.
+     * A short pause costs nothing and removes a coin flip.
+     */
+    val settleAfterConnectMs: Long = 500,
 )
 
 /**

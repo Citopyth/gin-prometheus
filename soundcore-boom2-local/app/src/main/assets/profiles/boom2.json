@@ -23,7 +23,8 @@
     ],
     "insecureSocket": true,
     "connectTimeoutMs": 12000,
-    "connectAttempts": 3
+    "connectAttempts": 3,
+    "settleAfterConnectMs": 500
   },
   "ble": {
     "enabled": true,
@@ -422,6 +423,7 @@
     "Die Box schickt von sich aus Meldungen: 01:03 Akku, 01:09 Lautstaerke, 02:04 BassUp. Sie stehen unter state.notifications und zeigen jeweils auf das Statusfeld mit derselben Bedeutung, damit es nur einen Decoder gibt. Erkannt wurden sie, indem ueber zwei Stunden die Wertemengen der Meldungen mit denen der Status-Bytes verglichen wurden.",
     "match.serviceUuids traegt die Dienst-UUID, die diese Box tatsaechlich anbietet. Daran erkennt die App das Modell zuverlaessiger als am Namen, der frei waehlbar und bei zwei Geraeten desselben Modells gleich ist.",
     "Die Box quittiert Schreibbefehle: auf jeden kommt ein leerer Rahmen mit derselben Befehlsadresse zurueck, innerhalb von 28 bis 205 ms. Fuenf der sechs Schreibbefehle tragen deshalb acknowledged=true - die Box kennt sie. Das ist ausdruecklich etwas anderes als verified: quittiert heisst verstanden, nicht 'tut was draufsteht'.",
-    "Beobachtet am 2026-11-06: die Box kann verstummen, ohne den Socket zu schliessen. Nach einem 0e 07 mit Wert ff kamen ueber 36 Sekunden auf zwoelf gesendete Rahmen null Antworten, und auch die Rahmen-Sondierung blieb stumm. Die App erkennt das jetzt daran, dass Befehle unbeantwortet bleiben."
+    "Beobachtet am 2026-11-06: die Box kann verstummen, ohne den Socket zu schliessen. Nach einem 0e 07 mit Wert ff kamen ueber 36 Sekunden auf zwoelf gesendete Rahmen null Antworten, und auch die Rahmen-Sondierung blieb stumm. Die App erkennt das jetzt daran, dass Befehle unbeantwortet bleiben.",
+    "transport.settleAfterConnectMs: die Box verschluckt regelmaessig den ersten Rahmen nach dem Verbindungsaufbau. In vier Mitschnitten ging er 0 bis 2 ms nach dem Socket-Aufbau raus und wurde zweimal beantwortet, zweimal nicht - spaetere Befehle derselben Verbindung dagegen immer. Eine halbe Sekunde Pause raeumt das aus. Zusaetzlich wiederholt die App unbeantwortete LESE-Befehle bis zu zweimal; Schreibbefehle nie, weil sie nicht zwingend wiederholbar sind."
   ]
 }

@@ -15,7 +15,8 @@
     "fallbackUuids": [],
     "insecureSocket": true,
     "connectTimeoutMs": 12000,
-    "connectAttempts": 3
+    "connectAttempts": 3,
+    "settleAfterConnectMs": 500
   },
   "ble": {
     "enabled": true,

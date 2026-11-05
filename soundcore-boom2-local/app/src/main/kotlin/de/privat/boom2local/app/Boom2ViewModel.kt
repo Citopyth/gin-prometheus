@@ -31,6 +31,7 @@ import de.privat.boom2local.protocol.Inbound
 import de.privat.boom2local.protocol.InboundClassifier
 import de.privat.boom2local.protocol.LengthSemantics
 import de.privat.boom2local.protocol.PacketCodec
+import de.privat.boom2local.protocol.PendingCommand
 import de.privat.boom2local.protocol.PendingCommands
 import de.privat.boom2local.protocol.PolicyDecision
 import de.privat.boom2local.protocol.ProfileEntry
@@ -40,6 +41,8 @@ import de.privat.boom2local.protocol.SessionEvent
 import de.privat.boom2local.protocol.SessionMachine
 import de.privat.boom2local.protocol.SessionPhase
 import de.privat.boom2local.protocol.SessionState
+import de.privat.boom2local.protocol.SilenceAction
+import de.privat.boom2local.protocol.SilenceResponse
 import de.privat.boom2local.protocol.TransportKind
 import de.privat.boom2local.protocol.TransportPreference
 import kotlinx.coroutines.Job
@@ -445,6 +448,10 @@ class Boom2ViewModel(application: Application) : AndroidViewModel(application) {
                             audit = audit.snapshot(),
                         )
                     }
+                    // The socket being up does not mean the control service is
+                    // listening: in four captures the first frame went out within 2 ms
+                    // and was ignored half the time.
+                    delay(profile.transport.settleAfterConnectMs.coerceIn(0L, 10_000L))
                     startWatchdog()
                     runHandshake(profile)
                     readState()
@@ -665,20 +672,69 @@ class Boom2ViewModel(application: Application) : AndroidViewModel(application) {
         val moment = now()
         val overdue = _ui.value.pending.overdue(moment)
         if (overdue.isEmpty()) return
-        for (entry in overdue) {
-            audit.add(
-                AuditKind.ERROR,
-                "Keine Antwort auf ${entry.command} nach " +
-                    "${(moment - entry.sentAtMs) / 1000} Sekunden",
-                timestampMs = moment,
-            )
+        _ui.update { it.copyWith(pending = it.pending.withoutOverdue(moment)) }
+
+        var gaveUp = false
+        for (action in SilenceResponse.decide(overdue)) {
+            when (action) {
+                is SilenceAction.Resend -> {
+                    val waited = (moment - action.pending.sentAtMs) / 1000
+                    audit.add(
+                        AuditKind.INFO,
+                        "Keine Antwort auf ${action.pending.command} nach $waited Sekunden " +
+                            "- wird erneut gesendet (Versuch ${action.pending.attempt + 1})",
+                        timestampMs = moment,
+                    )
+                    resend(action.pending)
+                }
+
+                is SilenceAction.GiveUp -> {
+                    val waited = (moment - action.pending.sentAtMs) / 1000
+                    audit.add(
+                        AuditKind.ERROR,
+                        "Keine Antwort auf ${action.pending.command} nach $waited Sekunden",
+                        timestampMs = moment,
+                    )
+                    gaveUp = true
+                }
+            }
         }
-        _ui.update {
-            it.copyWith(
-                pending = it.pending.withoutOverdue(moment),
-                stalled = true,
-                audit = audit.snapshot(),
-            )
+        _ui.update { it.copyWith(stalled = it.stalled || gaveUp, audit = audit.snapshot()) }
+    }
+
+    /**
+     * Sends a read again that went unanswered.
+     *
+     * No policy check: this is the identical frame a moment ago, which the policy
+     * already let through, and [SilenceResponse] only ever offers reads.
+     */
+    private fun resend(entry: PendingCommand) {
+        val active = link ?: return
+        if (!active.isConnected) return
+        viewModelScope.launch {
+            try {
+                val payload = Hex.decode(entry.payloadHex)
+                active.send(entry.command, payload)
+                _ui.update {
+                    it.copyWith(
+                        pending = it.pending.sent(
+                            command = entry.command,
+                            atMs = now(),
+                            kind = entry.kind,
+                            payloadHex = entry.payloadHex,
+                            attempt = entry.attempt + 1,
+                        ),
+                        audit = audit.snapshot(),
+                    )
+                }
+            } catch (e: Exception) {
+                audit.add(
+                    AuditKind.ERROR,
+                    "Wiederholung von ${entry.command} fehlgeschlagen: ${e.message}",
+                    timestampMs = now(),
+                )
+                _ui.update { it.copyWith(audit = audit.snapshot()) }
+            }
         }
     }
 
@@ -751,7 +807,12 @@ class Boom2ViewModel(application: Application) : AndroidViewModel(application) {
                 active.send(spec.commandAddress, payload)
                 _ui.update {
                     it.copyWith(
-                        pending = it.pending.sent(spec.commandAddress, now()),
+                        pending = it.pending.sent(
+                            command = spec.commandAddress,
+                            atMs = now(),
+                            kind = spec.kind,
+                            payloadHex = Hex.encode(payload),
+                        ),
                         audit = audit.snapshot(),
                     )
                 }
@@ -804,6 +865,8 @@ class Boom2ViewModel(application: Application) : AndroidViewModel(application) {
                         active.send(command, payload)
                         _ui.update {
                             it.copyWith(
+                                // A hand-entered command counts as a write: its
+                                // meaning is unknown, so it is never repeated.
                                 pending = it.pending.sent(command, now()),
                                 audit = audit.snapshot(),
                             )

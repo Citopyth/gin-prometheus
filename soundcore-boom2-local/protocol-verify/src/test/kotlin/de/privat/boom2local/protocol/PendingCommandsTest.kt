@@ -2,6 +2,7 @@ package de.privat.boom2local.protocol
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
 class PendingCommandsTest {
@@ -77,5 +78,87 @@ class PendingCommandsTest {
         val pending = PendingCommands().sent(bassUp, 1).sent(brightness, 2).cleared()
         assertEquals(0, pending.size)
         assertEquals(emptyList(), pending.overdue(Long.MAX_VALUE))
+    }
+}
+
+class SilenceResponseTest {
+
+    private val read = Command(0x01, 0x01)
+    private val write = Command(0x02, 0x84)
+
+    private fun pending(
+        command: Command,
+        kind: CommandKind,
+        attempt: Int = 1,
+    ) = PendingCommand(command, 0, kind, "", attempt)
+
+    @Test
+    fun `an unanswered read is sent again`() {
+        // The speaker swallows the first frame after connecting about half the time,
+        // and asking the same question twice changes nothing.
+        val actions = SilenceResponse.decide(listOf(pending(read, CommandKind.READ)))
+        val resend = assertIs<SilenceAction.Resend>(actions.single())
+        assertEquals(read, resend.pending.command)
+    }
+
+    @Test
+    fun `an unanswered write is never sent again`() {
+        // A write might not be idempotent: repeating an equaliser command because an
+        // acknowledgement was slow could leave the speaker somewhere nobody asked for.
+        val actions = SilenceResponse.decide(listOf(pending(write, CommandKind.WRITE)))
+        assertIs<SilenceAction.GiveUp>(actions.single())
+    }
+
+    @Test
+    fun `a read is given up on once the allowance is used`() {
+        val policy = SilencePolicy(readResends = 2)
+        assertIs<SilenceAction.Resend>(
+            SilenceResponse.decide(listOf(pending(read, CommandKind.READ, 1)), policy).single(),
+        )
+        assertIs<SilenceAction.Resend>(
+            SilenceResponse.decide(listOf(pending(read, CommandKind.READ, 2)), policy).single(),
+        )
+        assertIs<SilenceAction.GiveUp>(
+            SilenceResponse.decide(listOf(pending(read, CommandKind.READ, 3)), policy).single(),
+        )
+    }
+
+    @Test
+    fun `resending can be switched off entirely`() {
+        assertIs<SilenceAction.GiveUp>(
+            SilenceResponse.decide(
+                listOf(pending(read, CommandKind.READ)),
+                SilencePolicy(readResends = 0),
+            ).single(),
+        )
+    }
+
+    @Test
+    fun `a mixed batch is decided per command`() {
+        val actions = SilenceResponse.decide(
+            listOf(
+                pending(read, CommandKind.READ),
+                pending(write, CommandKind.WRITE),
+                pending(read, CommandKind.READ, attempt = 9),
+            ),
+        )
+        assertEquals(3, actions.size)
+        assertIs<SilenceAction.Resend>(actions[0])
+        assertIs<SilenceAction.GiveUp>(actions[1])
+        assertIs<SilenceAction.GiveUp>(actions[2])
+    }
+
+    @Test
+    fun `a repeat carries the same payload as the original`() {
+        val original = PendingCommand(read, 0, CommandKind.READ, "01 02", 1)
+        val resend = assertIs<SilenceAction.Resend>(
+            SilenceResponse.decide(listOf(original)).single(),
+        )
+        assertEquals("01 02", resend.pending.payloadHex)
+    }
+
+    @Test
+    fun `nothing overdue means nothing to decide`() {
+        assertEquals(emptyList(), SilenceResponse.decide(emptyList()))
     }
 }

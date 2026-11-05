@@ -1,7 +1,54 @@
 package de.privat.boom2local.protocol
 
 /** A command that was sent and has not been answered yet. */
-data class PendingCommand(val command: Command, val sentAtMs: Long)
+data class PendingCommand(
+    val command: Command,
+    val sentAtMs: Long,
+    val kind: CommandKind = CommandKind.WRITE,
+    /** The payload as hex, so a repeat sends exactly what the original did. */
+    val payloadHex: String = "",
+    /** 1 for the original send, 2 for the first repeat, and so on. */
+    val attempt: Int = 1,
+)
+
+/** How to treat a command the speaker never answered. */
+data class SilencePolicy(
+    /**
+     * How often an unanswered read may be sent again.
+     *
+     * Only reads. A read asks a question and asking twice changes nothing, while a
+     * write might not be idempotent — repeating an equaliser write because an
+     * acknowledgement was slow could leave the speaker somewhere nobody asked for.
+     */
+    val readResends: Int = 2,
+)
+
+/** What to do about one unanswered command. */
+sealed interface SilenceAction {
+    data class Resend(val pending: PendingCommand) : SilenceAction
+    data class GiveUp(val pending: PendingCommand) : SilenceAction
+}
+
+/**
+ * Decides what an unanswered command deserves.
+ *
+ * The case this is for: the speaker regularly misses the very first frame after a
+ * connection comes up — in four captures the first request went out 0 to 2 ms after
+ * the socket opened and was answered twice and ignored twice, while commands sent
+ * later on the same connection were all answered. A read that goes unanswered is
+ * therefore worth repeating; a write is not.
+ */
+object SilenceResponse {
+
+    fun decide(
+        overdue: List<PendingCommand>,
+        policy: SilencePolicy = SilencePolicy(),
+    ): List<SilenceAction> = overdue.map { pending ->
+        val mayResend = pending.kind == CommandKind.READ &&
+            pending.attempt <= policy.readResends
+        if (mayResend) SilenceAction.Resend(pending) else SilenceAction.GiveUp(pending)
+    }
+}
 
 /**
  * Tracks which commands are still waiting for an answer.
@@ -19,8 +66,14 @@ data class PendingCommands(
 ) {
     val size: Int get() = entries.size
 
-    fun sent(command: Command, atMs: Long): PendingCommands =
-        copy(entries = entries + PendingCommand(command, atMs))
+    fun sent(
+        command: Command,
+        atMs: Long,
+        kind: CommandKind = CommandKind.WRITE,
+        payloadHex: String = "",
+        attempt: Int = 1,
+    ): PendingCommands =
+        copy(entries = entries + PendingCommand(command, atMs, kind, payloadHex, attempt))
 
     /**
      * Clears the oldest entry for [command].
