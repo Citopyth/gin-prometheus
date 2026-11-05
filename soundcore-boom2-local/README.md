@@ -242,6 +242,29 @@ Regel eine Ebene tiefer. Die Liste ist nicht vollstaendig und steht im Profil un
 Auch der BLE-Weg **scannt nicht**: er verbindet direkt zum bereits gekoppelten Geraet.
 Die Standort-Berechtigung bleibt damit aussen vor.
 
+## Was bei einem Abbruch passiert
+
+Die Box legt auf. Das kommt vor: ausser Reichweite, ausgeschaltet, oder sie mag nicht
+mehr. Was die App daraufhin tut, entscheidet `SessionMachine` im Protokoll-Kern — eine
+reine Funktion aus Zustand und Ereignis, und damit testbar, ohne eine Attrappe eines
+Bluetooth-Sockets zu bauen.
+
+Die Regel, auf die es ankommt: **eine Abbruchmeldung nennt ihren Transport.** Scheitert
+RFCOMM und BLE kommt durch, meldet der aufgegebene RFCOMM-Socket hinterher trotzdem noch
+sein Ende. Diese Meldung gehoert zu einer Leitung, die niemand mehr benutzt, und darf die
+laufende nicht in einen Fehlerzustand reissen. Dasselbe gilt fuer eine Meldung, die
+eintrifft, nachdem du schon auf *Trennen* gedrueckt hast.
+
+Diese Regel ist nicht aus Vorsicht entstanden, sondern weil der Test sie erzwungen hat:
+der erste Entwurf konnte die beiden Faelle nicht unterscheiden.
+
+**Automatisch wiederverbinden** ist abschaltbar und standardmaessig **aus**. Eingeschaltet
+versucht die App es bis zu dreimal mit wachsendem Abstand (2, 4, 8 Sekunden), und ein
+erfolgreicher Neuaufbau setzt das Kontingent zurueck. *Trennen* bricht einen geplanten
+Versuch sofort ab. Aus ist die Voreinstellung, weil eine Box, die auflegt, meist einen
+Grund hat — und eine App, die endlos neu verbindet, Geraet und Akku beschaeftigt haelt,
+ohne dass es jemand merkt.
+
 ## Protokoll kartografieren
 
 So kommst du von "unbestaetigt" zu "bestaetigt". Du brauchst dafuer kein Android Studio —

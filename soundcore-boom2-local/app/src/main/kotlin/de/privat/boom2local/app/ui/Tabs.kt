@@ -32,7 +32,6 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import de.privat.boom2local.app.Boom2ViewModel
-import de.privat.boom2local.app.LinkState
 import de.privat.boom2local.app.UiState
 import de.privat.boom2local.protocol.AuditEntry
 import de.privat.boom2local.protocol.AuditKind
@@ -48,7 +47,7 @@ import kotlin.math.roundToInt
 @Composable
 fun ControlTab(state: UiState, model: Boom2ViewModel) {
     val profile = state.profile
-    val connected = state.link is LinkState.Connected
+    val connected = state.connected
 
     if (profile == null) {
         Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
@@ -214,7 +213,7 @@ fun ProtocolTab(state: UiState, model: Boom2ViewModel) {
     var commandText by remember { mutableStateOf("01 01") }
     var payloadText by remember { mutableStateOf("") }
     var captureText by remember { mutableStateOf("") }
-    val connected = state.link is LinkState.Connected
+    val connected = state.connected
 
     LazyColumn(
         modifier = Modifier

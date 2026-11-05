@@ -33,6 +33,11 @@ import de.privat.boom2local.protocol.PolicyDecision
 import de.privat.boom2local.protocol.ProfileEntry
 import de.privat.boom2local.protocol.ProfileMatcher
 import de.privat.boom2local.protocol.RawMode
+import de.privat.boom2local.protocol.ReconnectPolicy
+import de.privat.boom2local.protocol.SessionEvent
+import de.privat.boom2local.protocol.SessionMachine
+import de.privat.boom2local.protocol.SessionPhase
+import de.privat.boom2local.protocol.SessionState
 import de.privat.boom2local.protocol.StateDecoder
 import de.privat.boom2local.protocol.TransportKind
 import de.privat.boom2local.protocol.TransportPreference
@@ -43,14 +48,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-
-/** Where the Bluetooth link currently stands. */
-sealed interface LinkState {
-    data object Idle : LinkState
-    data object Connecting : LinkState
-    class Connected(val uuid: String, val origin: String) : LinkState
-    class Failed(val reason: String) : LinkState
-}
 
 /** Everything the screens render. */
 class UiState(
@@ -63,7 +60,9 @@ class UiState(
     val permissionGranted: Boolean = false,
     val devices: List<FoundDevice> = emptyList(),
     val selected: FoundDevice? = null,
-    val link: LinkState = LinkState.Idle,
+    val session: SessionState = SessionState(),
+    /** Try again by itself after the speaker drops the link. Off by default. */
+    val autoReconnect: Boolean = false,
     val deviceState: DecodedState? = null,
     /** Values the speaker announced on its own, newest per field. */
     val live: Map<String, DecodedField> = emptyMap(),
@@ -110,6 +109,10 @@ class UiState(
         }
 
     val profile: DeviceProfile? get() = active?.profile
+
+    val connected: Boolean get() = session.phase == SessionPhase.CONNECTED
+
+    val reconnectPolicy: ReconnectPolicy get() = ReconnectPolicy(enabled = autoReconnect)
 }
 
 class Boom2ViewModel(application: Application) : AndroidViewModel(application) {
@@ -122,6 +125,7 @@ class Boom2ViewModel(application: Application) : AndroidViewModel(application) {
     private val appContext: Context = application.applicationContext
     private var link: ControlTransport? = null
     private var frameJob: Job? = null
+    private var retryJob: Job? = null
 
     private val _ui = MutableStateFlow(UiState())
     val ui: StateFlow<UiState> = _ui.asStateFlow()
@@ -340,10 +344,13 @@ class Boom2ViewModel(application: Application) : AndroidViewModel(application) {
 
     // --- connection -------------------------------------------------------------------
 
-    fun connect() {
+    fun connect() = startConnect(isRetry = false)
+
+    private fun startConnect(isRetry: Boolean) {
         val state = _ui.value
         val profile = state.profile ?: run { note("Kein brauchbares Profil geladen."); return }
         val device = state.selected ?: run { note("Kein Geraet ausgewaehlt."); return }
+
         when (
             val gate = DeviceGate.check(
                 pinnedAddress = state.pinnedAddress,
@@ -373,9 +380,6 @@ class Boom2ViewModel(application: Application) : AndroidViewModel(application) {
             includeStandardProfiles = state.tryStandardProfiles,
         ).map { RfcommTransport.UuidCandidate(it.uuid, it.origin) }
 
-        // Classic first when the speaker advertises anything usable, because every
-        // published description of this protocol is RFCOMM. BLE is the fallback, and the
-        // only way to find out whether this model went the other way.
         val order = ConnectionPlan.plan(
             preference = state.transport,
             rfcommCandidates = rfcommCandidates.size,
@@ -402,43 +406,35 @@ class Boom2ViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
 
-        disconnect()
-        _ui.update { it.copyWith(link = LinkState.Connecting) }
+        closeLink()
+        if (!isRetry) cancelRetry()
+
         viewModelScope.launch {
-            val failures = mutableListOf<String>()
             for (transport in plan) {
                 link = transport
+                emit(SessionEvent.Attempting(transport.name))
                 val collector = viewModelScope.launch {
                     launch { transport.frames.collect { frame -> onFrame(frame) } }
                     launch {
                         transport.disconnects.collect { reason ->
-                            _ui.update {
-                                if (it.link is LinkState.Connected) {
-                                    it.copyWith(
-                                        link = LinkState.Failed(
-                                            "Verbindung verloren: $reason\n\nDie Box hat die " +
-                                                "Verbindung angenommen und dann beendet, ohne zu " +
-                                                "antworten. Das passiert, wenn sie mit den " +
-                                                "gesendeten Bytes nichts anfangen kann.",
-                                        ),
-                                        audit = audit.snapshot(),
-                                    )
-                                } else {
-                                    it.copyWith(audit = audit.snapshot())
-                                }
-                            }
+                            // The event names its transport, so a notice from a socket
+                            // abandoned earlier cannot disturb a link that is working.
+                            emit(SessionEvent.LinkLost(transport.name, reason))
                         }
                     }
                 }
                 frameJob = collector
                 try {
                     val target = transport.connect(device.device)
+                    emit(
+                        SessionEvent.Established(
+                            transport = transport.name,
+                            label = target.label,
+                            detail = target.detail,
+                        ),
+                    )
                     _ui.update {
                         it.copyWith(
-                            link = LinkState.Connected(
-                                target.label,
-                                "${transport.name} - ${target.detail}",
-                            ),
                             gattServices = gattServicesOf(transport) ?: it.gattServices,
                             audit = audit.snapshot(),
                         )
@@ -447,45 +443,101 @@ class Boom2ViewModel(application: Application) : AndroidViewModel(application) {
                     readState()
                     return@launch
                 } catch (e: Exception) {
-                    failures += "${transport.name}: ${e.message ?: e.javaClass.simpleName}"
+                    emit(
+                        SessionEvent.AttemptFailed(
+                            transport = transport.name,
+                            reason = e.message ?: e.javaClass.simpleName,
+                        ),
+                    )
                     collector.cancel()
                     if (frameJob === collector) frameJob = null
                     val seen = gattServicesOf(transport)
                     transport.shutdown()
                     if (link === transport) link = null
                     _ui.update {
-                        it.copyWith(
-                            gattServices = seen ?: it.gattServices,
-                            audit = audit.snapshot(),
-                        )
+                        it.copyWith(gattServices = seen ?: it.gattServices, audit = audit.snapshot())
                     }
                 }
             }
-            val reason = buildString {
-                append(failures.joinToString("\n\n"))
-                if (device.customUuids.isEmpty()) {
-                    append(
-                        "\n\nDie Box bietet laut SDP keinen herstellerspezifischen Dienst " +
-                            "an. Drueck zuerst \"SDP neu abfragen\": die gespeicherte Liste " +
-                            "stammt vom Koppeln und ist oft unvollstaendig.",
-                    )
-                }
-            }
-            _ui.update { it.copyWith(link = LinkState.Failed(reason), audit = audit.snapshot()) }
+            emit(
+                SessionEvent.AllAttemptsFailed(
+                    hint = if (device.customUuids.isEmpty()) {
+                        "Die Box bietet laut SDP keinen herstellerspezifischen Dienst an. " +
+                            "Drueck zuerst \"SDP neu abfragen\": die gespeicherte Liste " +
+                            "stammt vom Koppeln und ist oft unvollstaendig."
+                    } else {
+                        null
+                    },
+                ),
+            )
         }
+    }
+
+    /**
+     * Feeds one event to the session machine and acts on what it decides.
+     *
+     * The rules themselves live in [SessionMachine], where they are tested; this only
+     * starts or cancels the timer the machine asks for.
+     */
+    private fun emit(event: SessionEvent) {
+        val policy = _ui.value.reconnectPolicy
+        val before = _ui.value.session
+        val after = SessionMachine.next(before, event, policy)
+        _ui.update { it.copyWith(session = after, audit = audit.snapshot()) }
+        val wait = after.retryInMs
+        if (wait == null) {
+            cancelRetry()
+        } else if (before.retryInMs == null) {
+            scheduleRetry(wait)
+        }
+    }
+
+    private fun scheduleRetry(delayMs: Long) {
+        cancelRetry()
+        audit.add(
+            AuditKind.INFO,
+            "Erneuter Verbindungsversuch in ${delayMs / 1000} Sekunden",
+            timestampMs = now(),
+        )
+        retryJob = viewModelScope.launch {
+            delay(delayMs)
+            emit(SessionEvent.RetryStarted)
+            startConnect(isRetry = true)
+        }
+    }
+
+    private fun cancelRetry() {
+        retryJob?.cancel()
+        retryJob = null
+    }
+
+    fun setAutoReconnect(value: Boolean) {
+        audit.add(
+            AuditKind.INFO,
+            if (value) "Automatisch wiederverbinden: an" else "Automatisch wiederverbinden: aus",
+            timestampMs = now(),
+        )
+        if (!value) cancelRetry()
+        _ui.update { it.copyWith(autoReconnect = value, audit = audit.snapshot()) }
     }
 
     private fun gattServicesOf(transport: ControlTransport): List<GattService>? =
         (transport as? GattTransport)?.discoveredServices?.takeIf { it.isNotEmpty() }
 
     fun disconnect() {
+        cancelRetry()
+        closeLink()
+        emit(SessionEvent.UserDisconnected)
+    }
+
+    /** Tears the transport down without telling the session machine anything. */
+    private fun closeLink() {
         frameJob?.cancel()
         frameJob = null
-        // shutdown(), not close(): connect() always builds a fresh BluetoothLink, so this
+        // shutdown(), not close(): a fresh transport is built for every attempt, so this
         // instance is finished with and its coroutine scope has to go with it.
         link?.shutdown()
         link = null
-        _ui.update { it.copyWith(link = LinkState.Idle, audit = audit.snapshot()) }
     }
 
     private suspend fun runHandshake(profile: DeviceProfile) {
@@ -801,6 +853,7 @@ class Boom2ViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     override fun onCleared() {
+        cancelRetry()
         frameJob?.cancel()
         link?.shutdown()
         link = null
@@ -827,7 +880,8 @@ private fun UiState.copyWith(
     permissionGranted: Boolean = this.permissionGranted,
     devices: List<FoundDevice> = this.devices,
     selected: FoundDevice? = this.selected,
-    link: LinkState = this.link,
+    session: SessionState = this.session,
+    autoReconnect: Boolean = this.autoReconnect,
     deviceState: DecodedState? = this.deviceState,
     live: Map<String, DecodedField> = this.live,
     readOnly: Boolean = this.readOnly,
@@ -854,7 +908,8 @@ private fun UiState.copyWith(
     permissionGranted = permissionGranted,
     devices = devices,
     selected = selected,
-    link = link,
+    session = session,
+    autoReconnect = autoReconnect,
     deviceState = deviceState,
     live = live,
     readOnly = readOnly,

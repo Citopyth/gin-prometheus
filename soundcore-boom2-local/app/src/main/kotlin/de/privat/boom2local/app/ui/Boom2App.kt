@@ -45,12 +45,12 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import de.privat.boom2local.app.Boom2ViewModel
-import de.privat.boom2local.app.LinkState
 import de.privat.boom2local.app.SelfCheck
 import de.privat.boom2local.app.UiState
 import de.privat.boom2local.protocol.BluetoothServices
 import de.privat.boom2local.protocol.CommandKind
 import de.privat.boom2local.protocol.GattSelector
+import de.privat.boom2local.protocol.SessionPhase
 import de.privat.boom2local.protocol.TransportPreference
 
 private val TabTitles = listOf("Geraet", "Steuern", "Protokoll", "Sicherheit")
@@ -280,16 +280,29 @@ private fun DeviceTab(
         }
 
         SectionCard("Verbindung") {
-            when (val link = state.link) {
-                LinkState.Idle -> Note("Nicht verbunden.")
-                LinkState.Connecting -> Note("Verbinde ...")
-                is LinkState.Connected -> {
-                    Note("Verbunden.")
-                    Mono(link.uuid)
-                    Note(link.origin)
+            val session = state.session
+            when (session.phase) {
+                SessionPhase.IDLE -> Note("Nicht verbunden.")
+
+                SessionPhase.CONNECTING -> Note(
+                    "Verbinde" + (session.transport?.let { " ueber $it" } ?: "") + " ...",
+                )
+
+                SessionPhase.CONNECTED -> {
+                    Note("Verbunden ueber ${session.transport}.")
+                    session.label?.let { Mono(it) }
+                    session.detail?.let { Note(it) }
                 }
 
-                is LinkState.Failed -> Note(link.reason, warning = true)
+                SessionPhase.FAILED -> {
+                    Note(session.reason.orEmpty(), warning = true)
+                    session.retryInMs?.let { wait ->
+                        Note(
+                            "Neuer Versuch in ${wait / 1000} Sekunden " +
+                                "(${session.retries + 1}. Wiederholung).",
+                        )
+                    }
+                }
             }
             if (state.gattServices.isNotEmpty()) {
                 HorizontalDivider()
@@ -439,17 +452,36 @@ private fun DeviceTab(
                     "nur ueber eine authentifizierte Verbindung - auch das sieht von " +
                     "aussen aus wie eine Box, die schweigt.",
             )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Text(
+                    "Automatisch wiederverbinden",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Switch(
+                    checked = state.autoReconnect,
+                    onCheckedChange = { model.setAutoReconnect(it) },
+                )
+            }
+            Note(
+                "Nach einem Abbruch bis zu dreimal von selbst neu verbinden, mit " +
+                    "wachsendem Abstand (2, 4, 8 Sekunden). Aus by default: eine Box, die " +
+                    "auflegt, hat meist einen Grund, und eine App, die endlos neu " +
+                    "verbindet, haelt Geraet und Akku beschaeftigt, ohne dass es jemand " +
+                    "merkt. Trennen bricht einen geplanten Versuch sofort ab.",
+            )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(
                     onClick = { model.connect() },
-                    enabled = state.selected != null && state.link !is LinkState.Connected,
+                    enabled = state.selected != null && !state.connected,
                 ) {
                     Text("Verbinden")
                 }
                 OutlinedButton(
                     onClick = { model.disconnect() },
-                    enabled = state.link is LinkState.Connected ||
-                        state.link is LinkState.Connecting,
+                    enabled = state.session.phase != SessionPhase.IDLE,
                 ) {
                     Text("Trennen")
                 }
