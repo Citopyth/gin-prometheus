@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import de.privat.boom2local.app.bt.ControlTransport
 import de.privat.boom2local.app.bt.DeviceFinder
 import de.privat.boom2local.app.bt.GattTransport
+import de.privat.boom2local.app.bt.MediaRemote
 import de.privat.boom2local.app.bt.RfcommTransport
 import de.privat.boom2local.app.bt.FoundDevice
 import de.privat.boom2local.protocol.AuditEntry
@@ -19,6 +20,7 @@ import de.privat.boom2local.protocol.Command
 import de.privat.boom2local.protocol.CommandPolicy
 import de.privat.boom2local.protocol.CommandSpec
 import de.privat.boom2local.protocol.ConnectionPlan
+import de.privat.boom2local.protocol.Decibels
 import de.privat.boom2local.protocol.DecodedField
 import de.privat.boom2local.protocol.DecodedState
 import de.privat.boom2local.protocol.DeviceGate
@@ -47,8 +49,11 @@ import de.privat.boom2local.protocol.SessionPhase
 import de.privat.boom2local.protocol.SessionState
 import de.privat.boom2local.protocol.SilenceAction
 import de.privat.boom2local.protocol.SilenceResponse
+import de.privat.boom2local.protocol.SoundHistory
+import de.privat.boom2local.protocol.SoundSetting
 import de.privat.boom2local.protocol.TransportKind
 import de.privat.boom2local.protocol.TransportPreference
+import de.privat.boom2local.protocol.UndoPlan
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -82,6 +87,17 @@ class UiState(
     val rawMode: RawMode = RawMode.OFF,
     /** Pending argument values per command key, as the controls are moved. */
     val arguments: Map<String, Map<String, Int>> = emptyMap(),
+    /**
+     * Sound changes this app applied, oldest first, so each can be taken back.
+     *
+     * Session-scoped and never written to disk: it describes what happened on this
+     * connection, and claiming to know the speaker's state across restarts would be a
+     * claim nobody read. See [SoundHistory].
+     */
+    val soundHistory: List<SoundSetting> = emptyList(),
+    /** The phone's media volume, read when it is shown or changed. */
+    val mediaVolume: Int? = null,
+    val mediaVolumeMax: Int? = null,
     val audit: List<AuditEntry> = emptyList(),
     val capture: CaptureReport? = null,
     /** A fresh SDP query is running. */
@@ -133,6 +149,7 @@ class Boom2ViewModel(application: Application) : AndroidViewModel(application) {
     private val store = ProfileStore(application)
     private val pins = PinStore(application)
     private val finder = DeviceFinder(application)
+    private val media = MediaRemote(application)
 
     private val appContext: Context = application.applicationContext
     private var link: ControlTransport? = null
@@ -200,6 +217,7 @@ class Boom2ViewModel(application: Application) : AndroidViewModel(application) {
             )
         }
         library.filter { it.error != null }.forEach { note("${it.source}: ${it.error}") }
+        refreshMediaVolume()
         refreshDevices()
         _ui.update { it.copyWith(arguments = argumentDefaults(it.usableProfiles)) }
     }
@@ -875,6 +893,149 @@ class Boom2ViewModel(application: Application) : AndroidViewModel(application) {
         active.sendFrame(raw)
     }
 
+    /**
+     * Asks the speaker which devices it still remembers.
+     *
+     * Read-only, and unproven: Q4 reports 0b:01 and 0b:02 as pairing-list queries on
+     * the Space 2, and this speaker has never answered either of them in any capture.
+     * It is offered anyway because the question - who else may use this box - has no
+     * other answer from here, and a query that goes unanswered costs nothing.
+     *
+     * There is no known command that *removes* an entry. No source describes one, so
+     * emptying the list means resetting the speaker. That is the state of public
+     * knowledge, not a shortcoming of this app, and guessing a code that edits a
+     * pairing list is how you unpair yourself.
+     */
+    fun readPairedDevices() {
+        for (key in listOf("pairedDevices1", "pairedDevices2")) {
+            specFor(key)?.let { send(it) }
+        }
+    }
+
+    // --- universal remote -------------------------------------------------------------
+
+    /**
+     * The one part of this app that works with any Bluetooth speaker.
+     *
+     * Play, pause, skip and volume are standardised; the rest of this app exists
+     * because lights and equalisers are not. See [MediaRemote] for why none of this is
+     * sent to the speaker directly.
+     */
+    fun mediaPlayPause() = pressMedia("Play/Pause") { media.playPause() }
+    fun mediaNext() = pressMedia("Naechster Titel") { media.next() }
+    fun mediaPrevious() = pressMedia("Voriger Titel") { media.previous() }
+
+    fun mediaVolumeUp() = changeVolume("lauter") { media.volumeUp() }
+    fun mediaVolumeDown() = changeVolume("leiser") { media.volumeDown() }
+
+    private fun pressMedia(what: String, action: () -> Boolean) {
+        if (!action()) {
+            note("Medientaste konnte nicht gesendet werden.")
+            return
+        }
+        audit.add(AuditKind.INFO, "Medientaste: $what (ans Handy, nicht an die Box)", timestampMs = now())
+        _ui.update { it.copyWith(audit = audit.snapshot()) }
+    }
+
+    private fun changeVolume(what: String, action: () -> Boolean) {
+        if (!action()) {
+            note(
+                "Android hat die Lautstaerke abgelehnt. Das passiert bei " +
+                    "eingeschaltetem \"Nicht stoeren\"; dafuer braeuchte die App " +
+                    "Zugriff auf die Benachrichtigungs-Richtlinie, und den hat sie nicht.",
+            )
+            return
+        }
+        audit.add(AuditKind.INFO, "Medien-Lautstaerke $what", timestampMs = now())
+        refreshMediaVolume()
+    }
+
+    /** Reads the phone's media volume into the state so the screen can show it. */
+    fun refreshMediaVolume() {
+        _ui.update {
+            it.copyWith(
+                mediaVolume = media.volume(),
+                mediaVolumeMax = media.volumeMax(),
+                audit = audit.snapshot(),
+            )
+        }
+    }
+
+    // --- sound ------------------------------------------------------------------------
+
+    /**
+     * Applies one of the speaker's own equaliser presets.
+     *
+     * Which index means which sound is unknown - the speaker never says. That is what
+     * the ear is for: tap one, listen, tap the next. Every index replaces the previous
+     * one and the undo button is one tap away, so nothing here is a one-way door. The
+     * one index that was a one-way door, 255, the profile no longer allows.
+     */
+    fun applyPreset(index: Int) = applySound(
+        commandKey = "eqPreset",
+        label = "Voreinstellung $index",
+        arguments = mapOf("preset" to index),
+    )
+
+    /** Moves every equaliser band to the same gain, in whole decibels. */
+    fun applyAllBands(raw: Int) = applySound(
+        commandKey = "eqAllBands",
+        label = "Alle Baender ${Decibels.format(Decibels.fromRaw(raw))}",
+        arguments = mapOf("gain" to raw),
+    )
+
+    /** Switches BassUp, which the speaker also reports back on its own. */
+    fun applyBassUp(on: Boolean) = applySound(
+        commandKey = "bassUp",
+        label = "BassUp ${if (on) "an" else "aus"}",
+        arguments = mapOf("value" to if (on) 1 else 0),
+    )
+
+    /**
+     * One step back.
+     *
+     * The rules are in [SoundHistory]; this only looks up the command the plan names
+     * and sends it. Note what the floor of that stack is: the neutral curve, not
+     * whatever the speaker held before this app first wrote to it. That value was
+     * never read, so it cannot be restored, and pretending otherwise would be a lie
+     * told at the one moment the user most needs the truth.
+     */
+    fun undoSound() = replay(SoundHistory.undo(_ui.value.soundHistory), "Rueckgaengig")
+
+    /** Straight back to every band at 0 dB, forgetting the session. */
+    fun resetSound() = replay(SoundHistory.reset(), "Zurueck auf neutral")
+
+    private fun applySound(commandKey: String, label: String, arguments: Map<String, Int>) {
+        val spec = specFor(commandKey) ?: return
+        arguments.forEach { (key, value) -> setArgument(spec.key, key, value) }
+        audit.add(AuditKind.INFO, "Klang: $label", timestampMs = now())
+        send(spec, SoundHistory.push(_ui.value.soundHistory, SoundSetting(label, commandKey, arguments)))
+    }
+
+    private fun replay(plan: UndoPlan, why: String) {
+        val spec = specFor(plan.reapply.commandKey) ?: return
+        plan.reapply.arguments.forEach { (key, value) -> setArgument(spec.key, key, value) }
+        audit.add(
+            AuditKind.INFO,
+            "$why: ${plan.reapply.label}" + if (plan.atNeutral) " (neutral)" else "",
+            timestampMs = now(),
+        )
+        send(spec, plan.remaining)
+    }
+
+    private fun specFor(commandKey: String): CommandSpec? {
+        val profile = _ui.value.profile
+        if (profile == null) {
+            note("Kein brauchbares Profil geladen.")
+            return null
+        }
+        val spec = profile.commands.firstOrNull { it.key == commandKey }
+        if (spec == null) {
+            note("Das Profil kennt den Befehl '$commandKey' nicht.")
+        }
+        return spec
+    }
+
     private fun resend(entry: PendingCommand) {
         val active = link ?: return
         if (!active.isConnected) return
@@ -938,7 +1099,14 @@ class Boom2ViewModel(application: Application) : AndroidViewModel(application) {
         send(spec)
     }
 
-    fun send(spec: CommandSpec) {
+    fun send(spec: CommandSpec) = send(spec, historyAfterSending = null)
+
+    /**
+     * @param historyAfterSending when set, the sound history becomes this once the
+     *   frame is away. Set on success rather than on the tap, so a write refused for
+     *   being offline does not quietly consume an undo step.
+     */
+    private fun send(spec: CommandSpec, historyAfterSending: List<SoundSetting>?) {
         val state = _ui.value
         val profile = state.profile ?: return
         val active = link
@@ -980,6 +1148,7 @@ class Boom2ViewModel(application: Application) : AndroidViewModel(application) {
                             kind = spec.kind,
                             payloadHex = Hex.encode(payload),
                         ),
+                        soundHistory = historyAfterSending ?: it.soundHistory,
                         audit = audit.snapshot(),
                     )
                 }
@@ -1207,6 +1376,9 @@ private fun UiState.copyWith(
     readOnly: Boolean = this.readOnly,
     rawMode: RawMode = this.rawMode,
     arguments: Map<String, Map<String, Int>> = this.arguments,
+    soundHistory: List<SoundSetting> = this.soundHistory,
+    mediaVolume: Int? = this.mediaVolume,
+    mediaVolumeMax: Int? = this.mediaVolumeMax,
     audit: List<AuditEntry> = this.audit,
     capture: CaptureReport? = this.capture,
     sdpBusy: Boolean = this.sdpBusy,
@@ -1237,6 +1409,9 @@ private fun UiState.copyWith(
     readOnly = readOnly,
     rawMode = rawMode,
     arguments = arguments,
+    soundHistory = soundHistory,
+    mediaVolume = mediaVolume,
+    mediaVolumeMax = mediaVolumeMax,
     audit = audit,
     capture = capture,
     sdpBusy = sdpBusy,

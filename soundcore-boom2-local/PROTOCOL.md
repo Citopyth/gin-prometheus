@@ -299,6 +299,62 @@ Befehlssatz, auf den man sich verlassen koennte — nur `01 01` taucht ueberall 
 **Gemeldet (Q4):** die dB-Kodierung der Space 2 ist `Wert = 120 + dB * 10`, `0x78` also
 0 dB. Das Profil nimmt das fuer die Boom 2 an und markiert es als unbestaetigt.
 
+## 02:88 ist der Equalizer - belegt, und zwar auf die unangenehme Art
+
+**Am Geraet bestaetigt (2026-11-06):** `02 88` aendert den Klang. Das ist der erste
+schreibende Befehl dieses Projekts mit beobachteter Wirkung, und die Beobachtung kam
+zustande, weil die Wirkung schlecht war.
+
+Am 05.11.2026 gingen bei den Schreibversuchen diese zwei Rahmen raus:
+
+```
+20 S  08 ee 00 00 00 | 02 88 | 0b 00 | ff                | 8a
+21 R  09 ff 00 00 01 | 02 88 | 0a 00                     | 9d   quittiert nach 33 ms
+29 S  08 ee 00 00 00 | 02 88 | 10 00 | fe ff ff f0 ff 0a | 85
+30 R  09 ff 00 00 01 | 02 88 | 0a 00                     | 9d   quittiert nach 31 ms
+```
+
+Die sechs Nutzlast-Bytes lesen sich nach dem Profil so:
+
+| Byte | Bedeutung | gesendet |
+|---|---|---|
+| `fe` | fester Marker | |
+| `ff ff` | Band-Maske | alle Baender |
+| `f0` | Verstaerkung | 240 → `(240-120)/10` = **+12,0 dB** |
+| `ff` | Band-Index | 255 |
+| `0a` | fester Marker | |
+
+Danach berichtete der Nutzer einen hoerbar schlechteren Klang, beschrieben als
+ausgefallener Subwoofer. Das passt: +12 dB auf allen neun Baendern treibt den
+Verstaerker dauerhaft in den Limiter, und der nimmt zuerst und am meisten den Bass, weil
+der Bass die meiste Leistung zieht.
+
+**Warum das mehr als eine Vermutung ist:** die Pruefsumme `85` des Rahmens aus Zeile 29
+wurde aus dem Rahmenmodell dieses Projekts *berechnet* und stimmt mit dem Mitschnitt
+ueberein, ebenso `8a` fuer Zeile 20. Rahmenaufbau und Zerlegung der Nutzlast sind also
+nicht geraten, und ein Test rechnet beide Rahmen nach.
+
+**Ebenfalls belegt:** `02 88` nimmt an derselben Adresse zwei Nutzlastformen an - ein
+einzelnes Byte (Voreinstellung) und die sechs Byte oben. Der Index `ff` = 255 wurde
+quittiert, obwohl es ihn fast sicher nicht gibt; was die Box damit intern tat, ist
+unbekannt.
+
+**Was daraus im Profil folgt:**
+
+- `eqAllBands` ersetzt den frueheren `customEqBand`. Die Maske ist auf `ff ff`
+  festgenagelt, der Band-Index auf `ff`, und nur die Verstaerkung ist einstellbar -
+  Bereich 60..180 in Schritten von 10, also -6,0 bis +6,0 dB in ganzen Dezibel. `f0`
+  ist damit nicht mehr erreichbar, und zwar durch die Allowlist, nicht durch die
+  Oberflaeche.
+- `eqFlat` ist neu: `02 88` mit `fe ff ff 78 ff 0a`, also alle Baender auf 0,0 dB. 120
+  ist der Wert, den im einzigen erfassten Zustandsrahmen alle neun Baender trugen.
+- `eqPreset` geht nur noch von 0 bis 9.
+
+**Unbekannt bleibt** die Bit-Belegung der Band-Maske. Ohne sie gibt es keine
+Einzelband-Regelung, und Raten ist genau der Fehler oben. Herausfinden liesse sie sich
+mit kleinen Einzelversuchen bei milden Werten und einem Zustandsrahmen danach - das
+setzt aber voraus, dass `01 01` zuverlaessig antwortet, und das tut es noch nicht.
+
 ## Handshake
 
 **Gemeldet (Q4):** die Space 2 verwirft Schreibzugriffe, bis der Client einen Handshake
@@ -328,22 +384,27 @@ im Experten-Modus gesperrt bleibt.
 - **An echter Hardware bestaetigt (2026-11-06):** die Box bietet mehrere
   herstellerspezifische Dienste an, und nur `…7b3138` antwortet. `…7c3138` nimmt die
   Verbindung an und schweigt, `df21fe2c-…-f12c4d67927c` laesst sich nicht verbinden.
-- **Von der Box quittiert, Wirkung ungeprueft:** `02:84`, `02:88`, `0e:08`, `0e:05`.
-  Die Box kennt diese Befehle; dass ihre Namen stimmen, ist weiter vom Boom 3i
-  uebernommen. **Kein** schreibender Befehl ist damit verifiziert — dazu fehlt eine
-  beobachtete Wirkung.
+- **Mit beobachteter Wirkung belegt (2026-11-06):** `02 88` ist der Equalizer. Belegt
+  durch eine Verschlechterung, nicht durch eine Verbesserung - siehe den eigenen
+  Abschnitt. Der einzige schreibende Befehl mit `verified: true`.
+- **Von der Box quittiert, Wirkung ungeprueft:** `02:84`, `0e:08`, `0e:05`. Die Box
+  kennt diese Adressen; dass ihre Namen stimmen, ist weiter vom Boom 3i uebernommen.
 - **Gemeldet, plausibel, ungeprueft:** die Licht-Offsets, die Deutung von `0e:09`, die
-  Deutung von `01:04` als Lade-Kennzeichen (deckt sich mit Q4), und der
-  Lichtmodus-Befehl `0e:07`, der als einziger nicht quittiert wurde.
+  Deutung von `01:04` als Lade-Kennzeichen (deckt sich mit Q4), die Kopplungslisten-
+  Abfragen `0b:01`/`0b:02` (von dieser Box nie beantwortet), und der Lichtmodus-Befehl
+  `0e:07`, der als einziger nicht quittiert wurde.
 - **Widerlegt:** `0cf12d31-…-d6832e7d3138` als UUID der Boom 2, und damit die Annahme,
   das Byte vor der Modellnummer sei fuer alle Soundcore-Geraete gleich. Ebenfalls
   widerlegt: dass das Hersteller-Praefix den Steuerkanal eindeutig bestimmt.
 - **Hypothese:** das UUID-Schema als solches, `body[0]` als Akku-Prozent, der Zweck von
-  `…7c3138`.
-- **Unbekannt:** warum `01 01` in manchen Sitzungen auch ueber `…7b3138` unbeantwortet
-  bleibt, der gueltige Wertebereich von `0e:07`, die OTA-Befehle, die Zuordnung der
-  EQ-Voreinstellungs-IDs zu Namen, und wo das Lade-Kennzeichen im Zustandsrahmen steht
-  (falls ueberhaupt).
+  `…7c3138`, die Zuordnung der EQ-Voreinstellungs-IDs zu Namen.
+- **Unbekannt:** die Bit-Belegung der EQ-Band-Maske, warum `01 01` in manchen Sitzungen
+  auch ueber `…7b3138` unbeantwortet bleibt, der gueltige Wertebereich von `0e:07`, die
+  OTA-Befehle, ein Befehl der die Kopplungsliste aendert, und wo das Lade-Kennzeichen im
+  Zustandsrahmen steht (falls ueberhaupt).
 
 Deshalb traegt in der App jedes nicht verifizierte Feld ein rotes **unbestaetigt**, und
-deshalb ist der Nur-Lesen-Modus die Voreinstellung.
+deshalb ist der Nur-Lesen-Modus die Voreinstellung. Der Equalizer-Vorfall zeigt, warum
+beides nicht genuegt: der Nur-Lesen-Modus war ausgeschaltet, weil geschrieben werden
+sollte, und "unbestaetigt" sagt nichts darueber, wie weit ein Regler reichen darf.
+Dafuer sind jetzt die Argumentbereiche da.

@@ -275,7 +275,7 @@
     },
     {
       "key": "eqPreset",
-      "label": "EQ-Voreinstellung",
+      "label": "Klang-Voreinstellung der Box",
       "command": "02 88",
       "kind": "WRITE",
       "payloadTemplate": "??",
@@ -285,57 +285,48 @@
           "label": "Voreinstellung",
           "payloadIndex": 0,
           "min": 0,
-          "max": 255,
-          "default": 0
+          "max": 9,
+          "default": 0,
+          "step": 1
         }
       ],
       "verified": false,
-      "note": "Am Geraet bestaetigt: 02 88 mit einem Byte wird quittiert (33 ms).",
+      "note": "Am Geraet bestaetigt: 02 88 mit einem Byte wird quittiert (33 ms). Der Bereich stand hier auf 0..255, und mit 255 wurde am 05.11.2026 ein Index gesendet, den es mit grosser Wahrscheinlichkeit nicht gibt - quittiert hat die Box ihn trotzdem. Jetzt 0..9: welcher Index welchen Klang bedeutet, ist unbekannt und laesst sich nur durch Hoeren herausfinden. Jede Voreinstellung wird durch die naechste ersetzt, der Schritt ist also umkehrbar.",
       "acknowledged": true
     },
     {
-      "key": "customEqBand",
-      "label": "EQ-Band setzen",
+      "key": "eqFlat",
+      "label": "Alle EQ-Baender auf 0.0 dB",
       "command": "02 88",
       "kind": "WRITE",
-      "payloadTemplate": "fe ?? ?? ?? ?? 0a",
+      "payloadTemplate": "fe ff ff 78 ff 0a",
+      "arguments": [],
+      "acknowledged": true,
+      "verified": false,
+      "note": "Reparatur- und Nullstellung. Dieselbe Adresse und Nutzlastform, die die Box am 05.11.2026 nach 31 ms quittiert hat - nur mit 78 (=120) im Verstaerkungsbyte statt f0 (=240). 120 ist der Wert, den im einzigen erfassten Zustandsrahmen alle neun Baender trugen, und entspricht nach der Formel aus Q4 genau 0 dB."
+    },
+    {
+      "key": "eqAllBands",
+      "label": "Alle EQ-Baender zugleich",
+      "command": "02 88",
+      "kind": "WRITE",
+      "payloadTemplate": "fe ff ff ?? ff 0a",
       "arguments": [
         {
-          "key": "maskHigh",
-          "label": "Maske hoch",
-          "payloadIndex": 1,
-          "min": 0,
-          "max": 255,
-          "default": 0
-        },
-        {
-          "key": "maskLow",
-          "label": "Maske tief",
-          "payloadIndex": 2,
-          "min": 0,
-          "max": 255,
-          "default": 0
-        },
-        {
           "key": "gain",
-          "label": "Verstaerkung (roh)",
+          "label": "Verstaerkung",
           "payloadIndex": 3,
-          "min": 0,
-          "max": 240,
-          "default": 120
-        },
-        {
-          "key": "band",
-          "label": "Band",
-          "payloadIndex": 4,
-          "min": 0,
-          "max": 255,
-          "default": 0
+          "min": 60,
+          "max": 180,
+          "default": 120,
+          "step": 10,
+          "dbOffset": 120,
+          "dbScale": 10.0
         }
       ],
-      "verified": false,
-      "note": "Am Geraet bestaetigt: 02 88 mit sechs Byte wird ebenfalls quittiert (31 ms) - dieselbe Adresse nimmt beide Nutzlast-Formen an.",
-      "acknowledged": true
+      "acknowledged": true,
+      "verified": true,
+      "note": "Der einzige Schreibbefehl mit beobachteter Wirkung - und zwar einer schlechten. Am 05.11.2026 ging er mit Verstaerkung f0 (=240, +12 dB auf allen Baendern) raus, wurde nach 31 ms quittiert, und der Klang war danach hoerbar ruiniert: so viel Pegel treibt den Verstaerker dauerhaft in den Limiter, und der nimmt zuerst den Bass. Deshalb jetzt 60..180 in Schritten von 10, also -6.0 bis +6.0 dB in ganzen Dezibel. Der Bereich der Box geht weiter; dieser hier nicht."
     },
     {
       "key": "lightOn",

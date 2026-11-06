@@ -70,6 +70,82 @@ Dazu:
 - **Mitschnitt** jedes gesendeten und empfangenen Bytes in Hex, nur im Speicher, nie auf
   der Platte, es sei denn du kopierst ihn selbst.
 
+## Klang: nichts davon ist eine Einbahnstrasse
+
+Der Reiter **Klang** ist so gebaut, wie er gebaut ist, weil etwas schiefging. Am
+05.11.2026 ging `02 88` mit der Verstaerkung `f0` an eine echte Box - das sind **+12 dB
+auf allen neun EQ-Baendern**, die Box quittierte nach 31 ms, und der Klang war danach
+hoerbar ruiniert. So viel Pegel treibt den Verstaerker dauerhaft in den Limiter, und der
+nimmt zuerst den Bass. Es klingt wie ein ausgefallener Subwoofer.
+
+Der Grund war ein Regler, der den rohen Bytebereich 0..240 frei durchfahren liess.
+Jetzt:
+
+- **Die Rueckwege stehen oben**, vor allem, was etwas aendert: *Alles auf 0.0 dB* und
+  *Rueckgaengig*.
+- **Jede Aenderung ist umkehrbar.** `SoundHistory` im Protokoll-Kern merkt sich, was die
+  App gesetzt hat; *Rueckgaengig* geht einen Schritt zurueck, und der Boden des Stapels
+  ist der flache Equalizer.
+- **Die Verstaerkung ist in Dezibel** und rastet in ganzen Schritten von -6,0 bis +6,0
+  dB ein. Nicht nur in der Oberflaeche: die Allowlist prueft dasselbe Raster, ein
+  handgesetzter Wert kommt also auch nicht durch. `f0` ist nicht mehr erreichbar.
+- **Die Voreinstellungen der Box** gibt es als zehn Felder, 0 bis 9. Welche wie klingt,
+  sagt die Box nicht - das ist Sache des Ohrs, und jeder Versuch steht mit Uhrzeit im
+  Protokoll. Der Index 255, der damals quittiert wurde, ist gesperrt.
+
+**Was "zurueck" ehrlich heisst:** zurueck auf einen flachen Equalizer, nicht auf den
+Zustand, in dem die Box ab Werk war. Den hat niemand gelesen, bevor diese App das erste
+Mal geschrieben hat. Wenn der Klang nicht stimmt, ist die **Soundcore-App** der
+verlaessliche Weg - die kennt die Werte des Herstellers.
+
+**Einzelne Baender** kann die App nicht einstellen. Dafuer braeuchte es die
+Bit-Belegung der Band-Maske, und die ist unbekannt. Einmal geraten zu haben, hat
+gereicht.
+
+## Universelle Fernbedienung - der Teil, der wirklich universal ist
+
+Der Reiter **Fernbed.** steuert Wiedergabe und Lautstaerke und funktioniert mit **jeder**
+Bluetooth-Box, auch ohne Profil und auch dann, wenn der Steuerkanal gar nicht verbindet.
+
+Der Grund ist der Unterschied zwischen zwei Ebenen: Play, Pause, Titelwechsel und
+Lautstaerke sind standardisiert (AVRCP) und jedes Bluetooth-Audiogeraet beherrscht sie.
+Licht, Equalizer, Akkustand und Kopplungsliste sind es nicht - die liegen hinter
+herstellereigenen Codes, die pro Modell anders sind und nirgends veroeffentlicht. Fuer
+die Boom 2 stehen sie in einem Profil, das aus Mitschnitten dieser einen Box entstanden
+ist. **Eine Universal-Fernbedienung fuer diese Ebene kann es nicht geben.**
+
+Praezise gesagt: die Medientasten gehen an den Player, der auf dem Handy den Ton hat,
+und die Box folgt. An die Box selbst wird dabei nichts geschickt. Genau deshalb braucht
+dieser Reiter keine einzige zusaetzliche Berechtigung.
+
+## Nur ein Geraet soll die Box benutzen duerfen
+
+Das geht - aber nicht aus dieser App heraus, und das ist keine Bequemlichkeit, sondern
+eine Tatsache: wen die Box annimmt, entscheidet ihre Firmware anhand ihrer eigenen
+Kopplungsliste, und **es gibt keinen bekannten Befehl, der daraus einen Eintrag
+loescht**. Keine der Quellen Q1-Q6 beschreibt einen. Einen zu raten ist der Weg, mit dem
+man sein eigenes Handy aussperrt.
+
+Was es verlaesslich erreicht:
+
+1. **Box auf Werkseinstellungen zuruecksetzen.** Danach ist ihre Kopplungsliste leer.
+   Die Tastenkombination steht im Handbuch - hier absichtlich nicht geraten.
+2. **Nur das eigene Handy koppeln.**
+3. **Danach die Kopplungstaste an der Box nicht mehr druecken.** Das ist der einzige Weg,
+   auf dem waehrend des Betriebs ein neues Geraet hineinkommt.
+4. **PartyCast / Sound Share** startet ebenfalls nur ueber eine Taste an der Box.
+5. Falls die Box in der Soundcore-App eine Einstellung fuer zwei gleichzeitige Geraete
+   hat, dort abschalten.
+
+Nachsehen laesst es sich vielleicht von hier aus: der Reiter **Sicherheit** hat einen
+Knopf, der die Box nach ihrer Kopplungsliste fragt (`0b:01`/`0b:02`, bei Q4 fuer die
+Space 2 beschrieben). Diese Box hat darauf in **keinem** Mitschnitt geantwortet. Die
+Abfrage liest nur, sie aendert nichts.
+
+Umgekehrt ist es dicht: die App redet nur mit der Box, an die sie gebunden ist - eine
+MAC-Adresse, jedes andere Geraet wird abgelehnt. Das schuetzt die Box vor dieser App,
+nicht vor fremden Handys.
+
 ## Was die App nicht kann
 
 **Die Dienste *in* der Box kann man nicht abschalten.** Die Boom 2 laeuft mit

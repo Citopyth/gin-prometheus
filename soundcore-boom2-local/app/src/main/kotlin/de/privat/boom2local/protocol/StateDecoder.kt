@@ -189,11 +189,6 @@ object StateDecoder {
         return raw.toString()
     }
 
-    /** Formats with one decimal without pulling in a locale. */
-    internal fun formatDb(value: Double): String {
-        val tenths = (value * 10).roundToInt()
-        val sign = if (tenths < 0) "-" else ""
-        val a = abs(tenths)
-        return "$sign${a / 10}.${a % 10} dB"
-    }
+    /** One decimal, no locale, no leading plus. See [Decibels]. */
+    internal fun formatDb(value: Double): String = Decibels.formatUnsigned(value)
 }

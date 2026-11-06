@@ -44,10 +44,21 @@ class ProfileFileTest {
     }
 
     @Test
-    fun `no write command claims to be verified`() {
-        // Writes have never been tried against the speaker: the codes come from a
-        // capture of a different model.
-        assertTrue(profile.commands.none { it.verified })
+    fun `exactly one write command is verified, and for a bad reason`() {
+        // This test used to assert that no write was verified. That changed on
+        // 2026-11-06, and not happily: eqAllBands went out with gain 0xf0 - +12 dB on
+        // every band - and the sound was audibly ruined afterwards. An observed effect
+        // is an observed effect, so the command is verified. Nothing else is: the other
+        // writes are acknowledged, which only means the speaker knows the address.
+        assertEquals(
+            setOf("eqAllBands"),
+            profile.commands.filter { it.verified }.map { it.key }.toSet(),
+        )
+        val verified = profile.commands.single { it.verified }
+        assertTrue(
+            verified.note?.contains("Wirkung") == true,
+            "a verified write has to say which effect was seen",
+        )
         assertTrue(profile.notes.isNotEmpty())
     }
 
@@ -114,12 +125,15 @@ class ProfileFileTest {
     fun `an acknowledged command says so, and that is not the same as verified`() {
         val acknowledged = profile.commands.filter { it.acknowledged }.map { it.key }.toSet()
         assertEquals(
-            setOf("bassUp", "eqPreset", "customEqBand", "lightOn", "lightBrightness"),
+            setOf(
+                "bassUp", "eqPreset", "eqFlat", "eqAllBands",
+                "lightOn", "lightBrightness",
+            ),
             acknowledged,
         )
-        // The speaker confirms it knows these commands; what they do is still a label
-        // borrowed from another model, so none of them is verified.
-        assertTrue(profile.commands.none { it.verified })
+        // The speaker confirms it knows these addresses; for all but one, what they do
+        // is still a label borrowed from another model.
+        assertEquals(1, profile.commands.count { it.verified })
         for (spec in profile.commands.filter { it.acknowledged }) {
             assertTrue(
                 spec.note?.contains("quittiert") == true,
@@ -307,8 +321,42 @@ class ProfileFileTest {
     @Test
     fun `the write commands are the ones the ui offers and nothing more`() {
         assertEquals(
-            setOf("bassUp", "eqPreset", "customEqBand", "lightOn", "lightBrightness", "lightMode"),
+            setOf(
+                "bassUp", "eqPreset", "eqFlat", "eqAllBands",
+                "lightOn", "lightBrightness", "lightMode",
+            ),
             profile.commands.filter { it.kind == CommandKind.WRITE }.map { it.key }.toSet(),
         )
+    }
+
+    @Test
+    fun `no sound command can reach a gain that ruins the speaker`() {
+        // The whole point of the 2026-11-06 changes. Not a convention the UI follows:
+        // every value these commands will accept is checked here, and the policy
+        // enforces the same grid, so a hand-set argument cannot get past it either.
+        for (spec in profile.commands.filter { it.command == "02 88" }) {
+            for (argument in spec.arguments) {
+                if (!argument.isDecibels) continue
+                for (value in argument.allowedValues()) {
+                    assertTrue(
+                        value in Decibels.SAFE_RAW_RANGE,
+                        "${spec.key}/${argument.key} allows raw $value " +
+                            "(${argument.render(value)})",
+                    )
+                    assertTrue(argument.accepts(value))
+                }
+                // And the byte that caused the damage is refused outright.
+                assertTrue(!argument.accepts(0xf0), "${spec.key} still accepts 0xf0")
+            }
+        }
+    }
+
+    @Test
+    fun `the preset index that was sent in error can no longer be chosen`() {
+        val preset = profile.commands.single { it.key == "eqPreset" }.arguments.single()
+        assertTrue(!preset.accepts(0xff), "preset 255 is reachable again")
+        assertEquals(0, preset.min)
+        assertEquals(9, preset.max)
+        assertEquals(0, preset.default)
     }
 }

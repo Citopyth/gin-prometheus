@@ -62,7 +62,7 @@ class EndToEndTest {
         assertNotNull(session.state())
 
         val writes = session.profile.commands.filter { it.kind == CommandKind.WRITE }
-        assertEquals(6, writes.size)
+        assertEquals(7, writes.size)
         for (spec in writes) {
             assertTrue(!session.send(spec.key), "'${spec.key}' must not be sent")
         }

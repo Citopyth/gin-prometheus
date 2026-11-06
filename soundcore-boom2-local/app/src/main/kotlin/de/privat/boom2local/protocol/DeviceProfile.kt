@@ -427,10 +427,39 @@ data class ArgumentSpec(
     val payloadIndex: Int,
     val min: Int = 0,
     val max: Int = 255,
+    /**
+     * The grid this argument snaps to, counted from [min], in raw units.
+     *
+     * Not cosmetic. A free slider over 0..240 is how 0xf0 - every equaliser band at
+     * +12 dB - reached a real speaker and wrecked its sound; a step of 10 on that scale
+     * means whole decibels and nothing in between. [accepts] enforces it, so the gate
+     * holds even when a value does not come from the slider.
+     */
+    val step: Int = 1,
     /** When non-empty, only these values are accepted and the UI shows a picker. */
     val choices: List<Choice> = emptyList(),
     val default: Int? = null,
+    /** When both are set, the value is shown and chosen in dB. See [Decibels]. */
+    val dbOffset: Int? = null,
+    val dbScale: Double? = null,
 ) {
+    val isDecibels: Boolean
+        get() = dbOffset != null && dbScale != null && dbScale != 0.0
+
+    /** What the UI puts next to the slider: decibels where the scale is known. */
+    fun render(raw: Int): String {
+        val offset = dbOffset
+        val scale = dbScale
+        if (offset == null || scale == null || scale == 0.0) return raw.toString()
+        return "${Decibels.format(Decibels.fromRaw(raw, offset, scale))} (roh $raw)"
+    }
+
+    /** Every value this argument allows, in order - short by construction. */
+    fun allowedValues(): List<Int> = when {
+        choices.isNotEmpty() -> choices.map { it.value }
+        step <= 0 -> (min..max).toList()
+        else -> (min..max step step).toList()
+    }
     fun validate(commandKey: String): List<String> {
         val p = mutableListOf<String>()
         if (key.isBlank()) p += "command '$commandKey': argument with a blank key"
@@ -445,11 +474,30 @@ data class ArgumentSpec(
         if (default != null && (default < min || default > max)) {
             p += "command '$commandKey'/'$key': default $default outside $min..$max"
         }
+        if (step < 1) p += "command '$commandKey'/'$key': step must be at least 1"
+        if (step > 1) {
+            if ((max - min) % step != 0) {
+                p += "command '$commandKey'/'$key': step $step does not divide $min..$max"
+            }
+            if (default != null && (default - min) % step != 0) {
+                p += "command '$commandKey'/'$key': default $default is not on the step grid"
+            }
+        }
+        if (dbScale != null && dbScale == 0.0) {
+            p += "command '$commandKey'/'$key': dbScale must not be zero"
+        }
+        if ((dbOffset == null) != (dbScale == null)) {
+            p += "command '$commandKey'/'$key': dbOffset and dbScale go together"
+        }
         return p
     }
 
-    fun accepts(value: Int): Boolean =
-        value in min..max && (choices.isEmpty() || choices.any { it.value == value })
+    fun accepts(value: Int): Boolean = when {
+        value !in min..max -> false
+        choices.isNotEmpty() -> choices.any { it.value == value }
+        step > 1 -> (value - min) % step == 0
+        else -> true
+    }
 }
 
 @Serializable

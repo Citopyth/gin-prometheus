@@ -29,7 +29,7 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
+import androidx.compose.material3.ScrollableTabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -53,7 +53,8 @@ import de.privat.boom2local.protocol.GattSelector
 import de.privat.boom2local.protocol.SessionPhase
 import de.privat.boom2local.protocol.TransportPreference
 
-private val TabTitles = listOf("Geraet", "Steuern", "Protokoll", "Sicherheit")
+private val TabTitles =
+    listOf("Geraet", "Klang", "Fernbed.", "Steuern", "Protokoll", "Sicherheit")
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -81,7 +82,9 @@ fun Boom2App(model: Boom2ViewModel) {
         snackbarHost = { SnackbarHost(snackbar) },
     ) { insets ->
         Column(modifier = Modifier.padding(insets).fillMaxSize()) {
-            TabRow(selectedTabIndex = tab) {
+            // Scrollable: six titles do not fit across a phone, and a TabRow would
+            // squeeze them into unreadable stumps instead of letting them scroll.
+            ScrollableTabRow(selectedTabIndex = tab, edgePadding = 0.dp) {
                 TabTitles.forEachIndexed { index, title ->
                     Tab(
                         selected = tab == index,
@@ -97,8 +100,10 @@ fun Boom2App(model: Boom2ViewModel) {
                     }
                 }
 
-                1 -> ControlTab(state, model)
-                2 -> ProtocolTab(state, model)
+                1 -> SoundTab(state, model)
+                2 -> RemoteTab(state, model)
+                3 -> ControlTab(state, model)
+                4 -> ProtocolTab(state, model)
                 else -> SecurityTab(state, model)
             }
         }
@@ -535,6 +540,62 @@ private fun SecurityTab(state: UiState, model: Boom2ViewModel) {
                 "Ohne die Berechtigung INTERNET kann ein Android-Prozess gar keinen " +
                     "Netzwerk-Socket oeffnen. Das ist keine Einstellung, die sich im " +
                     "Betrieb umdrehen laesst.",
+            )
+        }
+
+        SectionCard(
+            "Nur mein Handy darf diese Box benutzen",
+            "Was wirklich hilft - und was diese App dafuer nicht tun kann.",
+        ) {
+            Note(
+                "Zuerst das Unangenehme: diese App kann es nicht erzwingen. Wen die Box " +
+                    "annimmt, entscheidet ihre Firmware anhand ihrer eigenen " +
+                    "Kopplungsliste. Es gibt keinen bekannten Befehl, der einen Eintrag " +
+                    "daraus loescht - keine der Quellen beschreibt einen. Einen zu raten " +
+                    "waere der Weg, mit dem du dein eigenes Handy aussperrst.",
+                warning = true,
+            )
+            Note(
+                "Was es verlaesslich erreicht, in dieser Reihenfolge:",
+            )
+            Note(
+                "1. Box auf Werkseinstellungen zuruecksetzen. Danach ist ihre " +
+                    "Kopplungsliste leer. Die Tastenkombination steht im Handbuch - ich " +
+                    "rate sie absichtlich nicht.",
+            )
+            Note("2. Ausschliesslich dein Handy koppeln, kein zweites Geraet.")
+            Note(
+                "3. Danach die Bluetooth- bzw. Kopplungstaste an der Box nicht mehr " +
+                    "druecken. Das ist der einzige Weg, auf dem ein neues Geraet " +
+                    "hineinkommt, solange die Box in Benutzung ist.",
+            )
+            Note(
+                "4. PartyCast bzw. Sound Share startet ebenfalls nur ueber eine Taste an " +
+                    "der Box. Nicht druecken, dann koppelt sich auch keine zweite Box dazu.",
+            )
+            Note(
+                "5. Falls deine Box in der Soundcore-App eine Einstellung fuer zwei " +
+                    "gleichzeitige Geraete hat (Multipoint), dort abschalten. Ob die " +
+                    "Boom 2 das anbietet, weiss ich nicht - schau nach, statt mir zu " +
+                    "glauben.",
+            )
+            HorizontalDivider()
+            Note(
+                "Nachsehen kannst du es von hier aus - vielleicht. Die Box wird nach " +
+                    "ihrer Kopplungsliste gefragt; geantwortet hat sie darauf in keinem " +
+                    "einzigen Mitschnitt. Die Abfrage liest nur, sie aendert nichts.",
+            )
+            Button(
+                onClick = { model.readPairedDevices() },
+                enabled = state.connected,
+            ) {
+                Text("Kopplungsliste abfragen")
+            }
+            if (!state.connected) Note("Nicht verbunden.")
+            Note(
+                "Umgekehrt ist es dicht: diese App redet nur mit der Box, an die sie " +
+                    "gebunden ist - eine MAC-Adresse, jedes andere Geraet wird abgelehnt. " +
+                    "Das schuetzt deine Box vor dieser App, nicht vor fremden Handys.",
             )
         }
 
