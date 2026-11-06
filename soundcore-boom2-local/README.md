@@ -18,7 +18,7 @@ Der Build bricht ab, wenn sich das je aendert:
 | Gradle-Task | Prueft |
 |---|---|
 | `verifySourceManifests` | kein INTERNET, kein Netzwerkstatus, kein Standort, kein Mikrofon, keine Kontakte in den Quell-Manifesten |
-| `verifyDebugMergedManifest` / `verifyReleaseMergedManifest` | dasselbe im **zusammengefuehrten** Manifest, also auch wenn eine Bibliothek die Berechtigung fuer dich hinzufuegt |
+| `verifyDebugMergedManifest` / `verifyReleaseMergedManifest` | dasselbe im **zusammengefuehrten** Manifest, also auch wenn eine Bibliothek die Berechtigung fuer dich hinzufuegt — und zusaetzlich, dass ausser dem Starter-Bildschirm **keine Komponente exportiert** ist |
 | `verifyDependencyAllowlist` | nur AndroidX und Kotlin landen im Runtime-Classpath — kein Firebase, kein Analytics, kein HTTP-Client |
 | `verifyNoNetworkImports` | der eigene Code importiert kein `java.net`, `okhttp3`, `retrofit2`, `com.google.firebase`, … |
 | `verifyProtocolCoreIsPure` | der Protokoll-Kern bleibt frei von Android-APIs und damit testbar |
@@ -33,6 +33,20 @@ Die App startet nie einen Bluetooth-Scan — sie liest nur die Liste der bereits
 *gekoppelten* Geraete. Genau das Scannen ist der Grund, warum Android-Apps Standort
 verlangen. Die Boom 2 muss fuer Audio ohnehin gekoppelt sein, also reicht die Liste.
 Einzige Laufzeit-Berechtigung: `BLUETOOTH_CONNECT`, und das erst ab Android 12.
+
+Das fertige APK verlangt genau vier Berechtigungen — `BLUETOOTH_CONNECT`, `BLUETOOTH`
+und `BLUETOOTH_ADMIN` (die beiden letzten nur bis Android 11) sowie eine
+`DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION` im eigenen Namensraum, die AndroidX anlegt
+und die niemandem etwas erlaubt.
+
+**Und sie hat keine Tuer nach draussen.** Die einzige von aussen erreichbare Komponente
+ist der Starter-Bildschirm. `androidx.profileinstaller` kommt hinter Compose
+transitiv mitgereist und bringt einen **exportierten** Broadcast-Empfaenger mit, damit
+eine Shell oder Play das Einspielen eines Startprofils anstossen kann. Er ist durch
+`android.permission.DUMP` geschuetzt, die keine normale App bekommt — also kein Loch,
+aber eine Tuer an einer App, deren Anspruch es ist, keine zu haben. Das Manifest
+entfernt ihn mit `tools:node="remove"`, und die Manifest-Pruefung bricht den Build ab,
+falls je wieder eine exportierte Komponente auftaucht, auch aus einer Bibliothek.
 
 **3. Sie sendet nur, was im Profil steht (Default-Deny).**
 Jeder ausgehende Befehl laeuft durch `CommandPolicy`. Was nicht in der Allowlist des

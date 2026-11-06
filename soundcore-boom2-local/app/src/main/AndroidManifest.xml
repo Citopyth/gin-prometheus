@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <!--
       What is NOT in here is the whole point of this app.
@@ -46,6 +47,33 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!--
+          Removed, not inherited.
+
+          androidx.profileinstaller rides in transitively behind Compose and contributes
+          an EXPORTED broadcast receiver, so that a shell or Play can tell the app to
+          install a baseline profile. It is guarded by android.permission.DUMP, which no
+          ordinary app can hold, so it is not a hole - but it is a door onto an app whose
+          whole claim is that it has none, and nothing here needs it. A startup profile
+          would make the first launch a few milliseconds quicker; that is not worth an
+          exported component.
+
+          The merged-manifest check in build.gradle.kts fails the build if any exported
+          component other than MainActivity ever appears again, including from a library.
+        -->
+        <receiver
+            android:name="androidx.profileinstaller.ProfileInstallReceiver"
+            tools:node="remove" />
+
+        <provider
+            android:name="androidx.startup.InitializationProvider"
+            android:authorities="${applicationId}.androidx-startup"
+            tools:node="merge">
+            <meta-data
+                android:name="androidx.profileinstaller.ProfileInstallerInitializer"
+                tools:node="remove" />
+        </provider>
     </application>
 
 </manifest>

@@ -250,9 +250,21 @@ val verifyDependencyAllowlist by tasks.registering {
 }
 
 /**
+ * The only component that may be reachable from outside this app.
+ *
+ * Anything else exported is a way in, and an app whose claim is that it has none should
+ * fail its own build rather than ship one. androidx.profileinstaller contributed exactly
+ * such a receiver behind Compose; the manifest removes it, and this list is what keeps
+ * the next one from arriving unnoticed.
+ */
+val allowedExportedComponents = listOf(
+    "de.privat.boom2local.app.MainActivity",
+)
+
+/**
  * The strongest of the checks: it reads the manifest AGP actually packages, after every
- * library manifest has been merged in. A dependency that declares INTERNET for you is
- * caught here even though your own manifest is clean.
+ * library manifest has been merged in. A dependency that declares INTERNET for you, or
+ * exports a component of its own, is caught here even though your own manifest is clean.
  */
 androidComponents {
     onVariants { variant ->
@@ -260,29 +272,58 @@ androidComponents {
         val manifest = variant.artifacts.get(com.android.build.api.artifact.SingleArtifact.MERGED_MANIFEST)
         val verifyMerged = tasks.register("verify${name}MergedManifest") {
             group = "verification"
-            description = "Fails when the merged manifest of $name requests network access."
+            description =
+                "Fails when the merged manifest of $name requests network access " +
+                    "or exports a component."
             inputs.file(manifest)
             doLast {
                 val file = manifest.get().asFile
-                val comment = Regex("<!--.*?-->", RegexOption.DOT_MATCHES_ALL)
-                val declaration =
-                    Regex("<uses-permission[\\w-]*[^>]*android:name\\s*=\\s*\"([^\"]+)\"")
-                val xml = file.readText().replace(comment, "")
-                val found = declaration.findAll(xml)
-                    .map { it.groupValues[1] }
-                    .filter { it in forbiddenPermissions }
-                    .distinct()
-                    .toList()
-                if (found.isNotEmpty()) {
+                // Parsed rather than pattern matched: attribute order is the merger's
+                // business, and a check that a regex can be walked past is no check.
+                val document = javax.xml.parsers.DocumentBuilderFactory.newInstance()
+                    .apply { isNamespaceAware = true }
+                    .newDocumentBuilder()
+                    .parse(file)
+                val android = "http://schemas.android.com/apk/res/android"
+
+                fun elements(tag: String) = document.getElementsByTagName(tag).let { list ->
+                    (0 until list.length).map { list.item(it) as org.w3c.dom.Element }
+                }
+
+                val requested = elements("uses-permission")
+                    .plus(elements("uses-permission-sdk-23"))
+                    .mapNotNull { it.getAttributeNS(android, "name").takeIf(String::isNotBlank) }
+                val forbidden = requested.filter { it in forbiddenPermissions }.distinct()
+                if (forbidden.isNotEmpty()) {
                     throw GradleException(
                         "The merged manifest of variant ${variant.name} requests:\n" +
-                            found.joinToString("\n") { "  - $it" } +
+                            forbidden.joinToString("\n") { "  - $it" } +
                             "\nThis is probably a dependency adding it. Find it with:\n" +
                             "  ./gradlew :app:verifyDependencyAllowlist\n" +
                             "Merged manifest: ${file.absolutePath}",
                     )
                 }
-                logger.lifecycle("merged manifest of ${variant.name} requests no network access")
+
+                val exported = listOf("activity", "activity-alias", "service", "receiver", "provider")
+                    .flatMap { tag -> elements(tag).map { tag to it } }
+                    .filter { (_, element) -> element.getAttributeNS(android, "exported") == "true" }
+                    .map { (tag, element) -> tag to element.getAttributeNS(android, "name") }
+                    .filterNot { (_, componentName) -> componentName in allowedExportedComponents }
+                if (exported.isNotEmpty()) {
+                    throw GradleException(
+                        "The merged manifest of variant ${variant.name} exports:\n" +
+                            exported.joinToString("\n") { "  - ${it.first} ${it.second}" } +
+                            "\nEvery exported component is a way into this app. Remove it with\n" +
+                            "tools:node=\"remove\" in app/src/main/AndroidManifest.xml, or add it to\n" +
+                            "allowedExportedComponents in app/build.gradle.kts and say why.\n" +
+                            "Merged manifest: ${file.absolutePath}",
+                    )
+                }
+
+                logger.lifecycle(
+                    "merged manifest of ${variant.name}: ${requested.size} permissions, " +
+                        "none forbidden, nothing exported but the launcher",
+                )
             }
         }
         tasks.matching { it.name == "assemble$name" }.configureEach {
