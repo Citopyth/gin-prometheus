@@ -160,6 +160,15 @@ class Boom2ViewModel(application: Application) : AndroidViewModel(application) {
     private var linkFramesIn: Int = 0
     private var linkFramesOut: Int = 0
 
+    /**
+     * Watchdog ticks since the last inbound frame.
+     *
+     * Deliberately not derived from the clock: Android freezes a sleeping app, and this
+     * counter freezes with it, which is what keeps a nap from being mistaken for a mute
+     * service. See [LinkLiveness].
+     */
+    private var silentChecks: Int = 0
+
     /** Set while a mute service is being dropped, so it cannot be dropped twice. */
     private var droppingMuteService = false
 
@@ -469,6 +478,11 @@ class Boom2ViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 frameJob = collector
                 try {
+                    // Zeroed before connecting, not after: the read loop starts inside
+                    // connect(), so a frame could arrive and then be counted away.
+                    linkFramesIn = 0
+                    linkFramesOut = 0
+                    silentChecks = 0
                     val target = transport.connect(device.device)
                     linkServiceUuid = target.serviceUuid
                     // Pinned here, not read back later: the user can change the
@@ -476,8 +490,6 @@ class Boom2ViewModel(application: Application) : AndroidViewModel(application) {
                     // the speaker the link was actually made to.
                     linkAddress = device.address
                     linkConnectedAtMs = now()
-                    linkFramesIn = 0
-                    linkFramesOut = 0
                     emit(
                         SessionEvent.Established(
                             transport = transport.name,
@@ -613,6 +625,7 @@ class Boom2ViewModel(application: Application) : AndroidViewModel(application) {
         linkAddress = null
         linkFramesIn = 0
         linkFramesOut = 0
+        silentChecks = 0
         _ui.update { it.copyWith(pending = it.pending.cleared(), stalled = false) }
         frameJob?.cancel()
         frameJob = null
@@ -660,6 +673,7 @@ class Boom2ViewModel(application: Application) : AndroidViewModel(application) {
     private fun onFrame(frame: Frame) {
         val profile = _ui.value.profile ?: return
         linkFramesIn++
+        silentChecks = 0
         if (linkFramesIn == 1) rememberWorkingService()
         // Anything coming back for a command answers it, whatever kind of answer it is.
         _ui.update {
@@ -795,11 +809,13 @@ class Boom2ViewModel(application: Application) : AndroidViewModel(application) {
     private fun checkForLiveness() {
         if (droppingMuteService) return
         if (_ui.value.session.phase != SessionPhase.CONNECTED) return
+        silentChecks++
         val verdict = LinkLiveness.verdict(
             policy = LivenessPolicy(),
             connectedAtMs = linkConnectedAtMs,
             framesReceived = linkFramesIn,
             framesSent = linkFramesOut,
+            checksWhileSilent = silentChecks,
             nowMs = now(),
         )
         if (verdict !is Liveness.Dead) return

@@ -264,14 +264,23 @@ Dagegen zwei Regeln, beide im Protokoll-Kern und beide unit-getestet:
 4. danach alles andere Herstellerspezifische, die Rueckfall-Kandidaten aus dem Profil,
    SPP, und auf Wunsch die Standardprofile.
 
-**Eine Verbindung muss sich als lebendig erweisen** (`LinkLiveness`). Kommt nach einer
-Gnadenfrist von sechs Sekunden auf eine gestellte Frage kein einziger Rahmen zurueck,
-gilt der Dienst als tot: die App trennt, schliesst ihn **fuer diese Sitzung** aus und
-probiert den naechsten. Nicht fuer immer — ein Dienst kann auch schweigen, weil die Box
-gerade beschaeftigt ist; ein Druck auf *Verbinden* fuellt die Liste wieder auf.
+**Eine Verbindung muss sich als lebendig erweisen** (`LinkLiveness`). Drei Dinge muessen
+zusammenkommen, bevor ein Dienst abgeschrieben wird:
 
-Hat die App noch nichts gefragt, zaehlt Schweigen nicht. Sonst wuerde jede Verbindung
-sterben, bei der du das Handy einfach weglegst.
+- die App hat etwas gefragt — sonst sagt Schweigen nichts;
+- es sind sechs Sekunden vergangen;
+- die App hat dreimal nachgesehen und nichts gefunden.
+
+Dann trennt sie, schliesst den Dienst **fuer diese Sitzung** aus und probiert den
+naechsten. Nicht fuer immer — ein Dienst kann auch schweigen, weil die Box gerade
+beschaeftigt ist; ein Druck auf *Verbinden* fuellt die Liste wieder auf.
+
+Der dritte Punkt ist nicht dasselbe wie der zweite, und er ist der wichtige. Android
+friert eine schlafende App ein und schiebt ihr beim Aufwachen den Stau nach — in zwei
+Mitschnitten kamen 396 und 352 Byte gepufferter Meldungen in einem Zug. Die Uhr lief
+dabei weiter, der Zaehler nicht. Ohne ihn wuerde die App nach einem Nickerchen genau den
+Dienst abschreiben, der funktioniert, und du haettest gar keine Verbindung mehr — weil
+der Bildschirm aus war.
 
 ## Was bei einem Abbruch passiert
 

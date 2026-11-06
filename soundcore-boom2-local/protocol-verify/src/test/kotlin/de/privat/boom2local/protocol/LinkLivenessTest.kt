@@ -8,8 +8,16 @@ class LinkLivenessTest {
 
     private val policy = LivenessPolicy()
 
-    private fun verdict(received: Int, sent: Int, elapsed: Long) =
-        LinkLiveness.verdict(policy, connectedAtMs = 1_000, received, sent, nowMs = 1_000 + elapsed)
+    /** Enough looks to satisfy the observation rule, so each test varies one thing. */
+    private fun verdict(received: Int, sent: Int, elapsed: Long, checks: Int = 99) =
+        LinkLiveness.verdict(
+            policy = policy,
+            connectedAtMs = 1_000,
+            framesReceived = received,
+            framesSent = sent,
+            checksWhileSilent = checks,
+            nowMs = 1_000 + elapsed,
+        )
 
     @Test
     fun `one inbound frame is enough to call the link alive`() {
@@ -49,25 +57,67 @@ class LinkLivenessTest {
         // The app called that a healthy connection for over three minutes.
         assertEquals(
             Liveness.Dead(LinkLiveness.NO_ANSWER),
-            verdict(received = 0, sent = 11, elapsed = 200_000),
+            verdict(received = 0, sent = 11, elapsed = 200_000, checks = 90),
         )
     }
 
     @Test
     fun `a stricter policy can demand more than one frame`() {
-        val strict = LivenessPolicy(graceMs = 2_000, minFrames = 2)
+        val strict = LivenessPolicy(graceMs = 2_000, minFrames = 2, minChecks = 1)
+        fun strictly(received: Int, now: Long) = LinkLiveness.verdict(
+            policy = strict,
+            connectedAtMs = 0,
+            framesReceived = received,
+            framesSent = 1,
+            checksWhileSilent = 1,
+            nowMs = now,
+        )
+        assertEquals(Liveness.Waiting, strictly(received = 1, now = 1_000))
+        assertEquals(Liveness.Alive, strictly(received = 2, now = 1_000))
+        assertTrue(strictly(received = 1, now = 9_000) is Liveness.Dead)
+    }
+
+    @Test
+    fun `a phone that was asleep does not get its good service written off`() {
+        // The case that would hurt most. Android freezes a sleeping app and hands it the
+        // backlog on waking; two captures show 396 and 352 bytes arriving in one read.
+        // The clock ran the whole time, so wall time alone says "mute for four minutes"
+        // about the one service that actually works, and the user ends up with no
+        // connection because the screen was off.
         assertEquals(
             Liveness.Waiting,
-            LinkLiveness.verdict(strict, 0, framesReceived = 1, framesSent = 1, nowMs = 1_000),
+            verdict(received = 0, sent = 11, elapsed = 240_000, checks = 1),
         )
+        // A few seconds of being awake is all it takes to decide properly either way.
         assertEquals(
             Liveness.Alive,
-            LinkLiveness.verdict(strict, 0, framesReceived = 2, framesSent = 1, nowMs = 1_000),
+            verdict(received = 36, sent = 11, elapsed = 240_000, checks = 1),
         )
         assertTrue(
-            LinkLiveness.verdict(strict, 0, framesReceived = 1, framesSent = 1, nowMs = 9_000)
+            verdict(received = 0, sent = 11, elapsed = 240_000, checks = policy.minChecks)
                 is Liveness.Dead,
         )
+    }
+
+    @Test
+    fun `looking often without the clock moving is not enough either`() {
+        // The mirror image: a tight loop must not condemn a service in 50 ms.
+        assertEquals(
+            Liveness.Waiting,
+            verdict(received = 0, sent = 1, elapsed = 50, checks = 1_000),
+        )
+    }
+
+    @Test
+    fun `the three conditions are each necessary on their own`() {
+        val sent = 5
+        val long = policy.graceMs + 1
+        val enough = policy.minChecks
+        assertTrue(verdict(0, sent, long, enough) is Liveness.Dead)
+        // Drop any one of them and the verdict goes back to waiting.
+        assertEquals(Liveness.Waiting, verdict(0, sent = 0, elapsed = long, checks = enough))
+        assertEquals(Liveness.Waiting, verdict(0, sent, elapsed = 0, checks = enough))
+        assertEquals(Liveness.Waiting, verdict(0, sent, long, checks = enough - 1))
     }
 
     @Test
