@@ -45,8 +45,16 @@ transitiv mitgereist und bringt einen **exportierten** Broadcast-Empfaenger mit,
 eine Shell oder Play das Einspielen eines Startprofils anstossen kann. Er ist durch
 `android.permission.DUMP` geschuetzt, die keine normale App bekommt — also kein Loch,
 aber eine Tuer an einer App, deren Anspruch es ist, keine zu haben. Das Manifest
-entfernt ihn mit `tools:node="remove"`, und die Manifest-Pruefung bricht den Build ab,
-falls je wieder eine exportierte Komponente auftaucht, auch aus einer Bibliothek.
+entfernt ihn mit `tools:node="remove"`.
+
+Die Pruefung hat sich sofort bezahlt: sie fand eine **zweite** exportierte Komponente,
+die ich von Hand uebersehen hatte — `androidx.compose.ui.tooling.PreviewActivity`, aus
+`ui-tooling`. Die war nur im **Debug**-APK, nicht in dem, das du installierst. Da dieses
+Projekt kein einziges `@Preview` enthaelt, sind beide Tooling-Abhaengigkeiten jetzt raus;
+das loescht die Ursache statt das Symptom.
+
+Von hier an bricht der Build ab, wenn je wieder eine exportierte Komponente auftaucht,
+auch aus einer Bibliothek.
 
 **3. Sie sendet nur, was im Profil steht (Default-Deny).**
 Jeder ausgehende Befehl laeuft durch `CommandPolicy`. Was nicht in der Allowlist des

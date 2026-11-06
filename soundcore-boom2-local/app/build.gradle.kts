@@ -73,11 +73,19 @@ dependencies {
     implementation(platform("androidx.compose:compose-bom:2024.12.01"))
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-graphics")
-    implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.foundation:foundation")
     implementation("androidx.compose.material3:material3")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
-    debugImplementation("androidx.compose.ui:ui-tooling")
+
+    // Deliberately absent: androidx.compose.ui:ui-tooling and :ui-tooling-preview.
+    //
+    // They exist so Android Studio can render @Preview composables, and ui-tooling
+    // brings an EXPORTED activity along to host them on a device. There is not one
+    // @Preview in this project - every screen is checked by building and running it -
+    // so the only thing they contributed was that entry point in the debug APK.
+    //
+    // If you ever want previews in the IDE, add them back; the merged-manifest check
+    // will then stop the build and tell you what you are letting in.
 }
 
 // ---------------------------------------------------------------------------------------
