@@ -310,6 +310,17 @@ data class FieldSpec(
     /** For U8/EQ_BANDS: render as dB using `(raw - dbOffset) / dbScale`. */
     val dbOffset: Int? = null,
     val dbScale: Double? = null,
+    /**
+     * False means the speaker never puts this value in a state frame.
+     *
+     * Some values only ever arrive unasked. The charging flag is one: the speaker
+     * announces it the moment the cable goes in, and no captured state frame was ever
+     * taken while charging, so where it would sit in that frame - if anywhere - is
+     * unknown. Claiming an offset would be an invention; leaving the field out would
+     * throw away a notification that does work. So the field exists, carries no offset,
+     * and [StateDecoder] skips it instead of reporting it as unreadable.
+     */
+    val inStateFrame: Boolean = true,
     /** False means: read off a capture, never confirmed on hardware. */
     val verified: Boolean = false,
     val note: String? = null,
@@ -318,6 +329,9 @@ data class FieldSpec(
         val p = mutableListOf<String>()
         if (key.isBlank()) p += "state field with a blank key"
         if (offset < 0) p += "field '$key': negative offset $offset"
+        if (!inStateFrame && type == FieldType.EQ_BANDS) {
+            p += "field '$key': EQ_BANDS always comes from a state frame"
+        }
         if (type == FieldType.ASCII || type == FieldType.BYTES) {
             if (length < 1) p += "field '$key': length must be at least 1"
         }

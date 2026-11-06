@@ -74,6 +74,42 @@ der Box (`BluetoothDevice.uuids`) und nimmt den Dienst, der mit dem Praefix
 anbietet, probiert sie die Kandidaten aus dem Profil. Die Hypothese ist also der
 Rueckfall, nicht die Grundlage.
 
+### Die Box bietet mehr als einen herstellerspezifischen Dienst an
+
+**Am Geraet bestaetigt (2026-11-06):** der SDP-Eintrag der Boom 2 enthaelt nicht einen,
+sondern mindestens drei nicht-registrierte Dienste. Ein Mitschnitt zeigte die App beim
+Durchprobieren von allen:
+
+| Dienst | Verbindung | Antwortet |
+|---|---|---|
+| `0cf12d31-fac3-4553-bd80-d6832e7b3138` | ja | **ja** — Zustandsrahmen, Bestaetigungen, Meldungen |
+| `0cf12d31-fac3-4553-bd80-d6832e7c3138` | ja | **nein** — kein einziges Byte |
+| `df21fe2c-2515-4fdb-8886-f12c4d67927c` | nein (`read failed`) | — |
+
+Das ist die unangenehmste Entdeckung dieses Mitschnitts. `…7b3138` und `…7c3138`
+unterscheiden sich in einem Hex-Zeichen, passen beide auf das Hersteller-Praefix, und in
+welcher Reihenfolge Android sie herausgibt, liegt nicht fest. Im Mitschnitt verband sich
+die App nach einem Abbruch auf `…7c3138`, schickte darueber einen Zustandsrahmen, einen
+siebenschrittigen Handshake und zwei Schreibbefehle — elf Pakete — und bekam nichts
+zurueck, waehrend sie die Verbindung drei Minuten lang als gesund meldete. Von aussen
+ist das nicht von einer Box zu unterscheiden, die aufgehoert hat zu antworten.
+
+Wozu `…7c3138` da ist, ist offen. Naheliegend waere ein zweiter Kanal fuer die
+Soundcore-App (Benachrichtigungen, OTA-Anstoss) oder ein Ueberrest aus der Firmware
+einer Schwesterbox. Belegt ist nur, dass er die Verbindung annimmt und schweigt.
+
+**Was die App daraus macht,** in dieser Reihenfolge:
+
+1. der Dienst, ueber den *diese* Box schon einmal geantwortet hat (gemerkt, siehe
+   `ProvenServices`);
+2. der Dienst, den das Profil unter `match.serviceUuids` als Steuerkanal nennt;
+3. erst dann ein reiner Praefix-Treffer.
+
+Und: eine Verbindung, die zustande kommt und nach einer Gnadenfrist auf eine gestellte
+Frage nicht geantwortet hat, gilt als toter Dienst (`LinkLiveness`). Sie wird getrennt,
+der Dienst fuer diese Sitzung ausgeschlossen und der naechste probiert. Ein Praefix ist
+damit das schwaechste der drei Signale, nicht das erste.
+
 ## Rahmen
 
 ```
@@ -193,9 +229,16 @@ bleibt, wird gemeldet.
 | `01:09` | 1 Byte | Lautstaerke | Wert `1f` (31), identisch mit `body[0]`; fuenf Meldungen in einer Sekunde |
 | `02:04` | 1 Byte | BassUp | Werte `00 → 01`, identisch mit `body[3]` |
 | `0e:09` | 1 Byte | Licht an/aus (vermutet) | kam zweimal mit `01`, jeweils als das Licht angegangen sein duerfte. `00` nie beobachtet |
+| `01:04` | 1 Byte | Laedt (vermutet) | kam einmal mit `01`; danach blieb der Akkustand 90 Minuten konstant statt zu fallen. Q4 nennt `01 04` fuer die Space 2 als Lade-Kennzeichen. `00` nie beobachtet |
 
-In keiner der Quellen Q1–Q6 stehen diese drei. Sie sind aus dem Mitschnitt an echter
-Hardware erschlossen.
+Die ersten drei stehen in keiner der Quellen Q1–Q6; sie sind aus dem Mitschnitt an
+echter Hardware erschlossen. Bei `01:04` deckt sich der Mitschnitt mit Q4.
+
+`01:04` ist der einzige Wert, der in keinem beobachteten Zustandsrahmen auftaucht — alle
+Mitschnitte entstanden ohne Netzteil, der Lade-Byte waere also durchweg `00` gewesen und
+durch Vergleichen nicht zu finden. Das Profil fuehrt das Feld deshalb mit
+`inStateFrame: false`: ohne Offset, nur fuer die Meldung. Einen Offset zu behaupten waere
+geraten.
 
 **Belegt (Q2) — der aeltere Boom-2-Mitschnitt.** Die Nutzlast beginnt mit:
 
@@ -277,23 +320,30 @@ im Experten-Modus gesperrt bleibt.
 
 ## Zusammenfassung des Verifikationsstands
 
-- **An echter Hardware bestaetigt:** Transport (RFCOMM), Dienst-UUID, Modellnummer,
-  **der komplette Rahmen** (Header, Laengenfeld als Gesamtlaenge, Pruefsumme), `01 01`
-  als Zustandsabfrage, und die Felder Lautstaerke, Akku, BassUp, Firmware,
-  Seriennummer sowie die Lage der neun EQ-Baender. Dazu die drei Meldungen `01:03`,
-  `01:09` und `02:04`, die in keiner Quelle stehen.
+- **An echter Hardware bestaetigt:** Transport (RFCOMM), Modellnummer A3138, Dienst-UUID
+  `0cf12d31-fac3-4553-bd80-d6832e7b3138`, **der komplette Rahmen** (Header, Laengenfeld
+  als Gesamtlaenge, Pruefsumme), `01 01` als Zustandsabfrage, und die Felder
+  Lautstaerke, Akku, BassUp, Firmware, Seriennummer sowie die Lage der neun EQ-Baender.
+  Dazu die drei Meldungen `01:03`, `01:09` und `02:04`, die in keiner Quelle stehen.
+- **An echter Hardware bestaetigt (2026-11-06):** die Box bietet mehrere
+  herstellerspezifische Dienste an, und nur `…7b3138` antwortet. `…7c3138` nimmt die
+  Verbindung an und schweigt, `df21fe2c-…-f12c4d67927c` laesst sich nicht verbinden.
 - **Von der Box quittiert, Wirkung ungeprueft:** `02:84`, `02:88`, `0e:08`, `0e:05`.
   Die Box kennt diese Befehle; dass ihre Namen stimmen, ist weiter vom Boom 3i
-  uebernommen.
-- **Gemeldet, plausibel, ungeprueft:** die Licht-Offsets, die Deutung von `0e:09`, und
-  der Lichtmodus-Befehl `0e:07`, der als einziger nicht quittiert wurde.
-- **Am Geraet bestaetigt:** Dienst-UUID `0cf12d31-fac3-4553-bd80-d6832e7b3138`,
-  Modellnummer A3138, RFCOMM als Transport.
+  uebernommen. **Kein** schreibender Befehl ist damit verifiziert — dazu fehlt eine
+  beobachtete Wirkung.
+- **Gemeldet, plausibel, ungeprueft:** die Licht-Offsets, die Deutung von `0e:09`, die
+  Deutung von `01:04` als Lade-Kennzeichen (deckt sich mit Q4), und der
+  Lichtmodus-Befehl `0e:07`, der als einziger nicht quittiert wurde.
 - **Widerlegt:** `0cf12d31-…-d6832e7d3138` als UUID der Boom 2, und damit die Annahme,
-  das Byte vor der Modellnummer sei fuer alle Soundcore-Geraete gleich.
-- **Hypothese:** das UUID-Schema als solches, `body[0]` als Akku-Prozent.
-- **Unbekannt:** Laengenfeld-Semantik, Handshake, OTA-Befehle, Zuordnung der
-  EQ-Voreinstellungs-IDs zu Namen.
+  das Byte vor der Modellnummer sei fuer alle Soundcore-Geraete gleich. Ebenfalls
+  widerlegt: dass das Hersteller-Praefix den Steuerkanal eindeutig bestimmt.
+- **Hypothese:** das UUID-Schema als solches, `body[0]` als Akku-Prozent, der Zweck von
+  `…7c3138`.
+- **Unbekannt:** warum `01 01` in manchen Sitzungen auch ueber `…7b3138` unbeantwortet
+  bleibt, der gueltige Wertebereich von `0e:07`, die OTA-Befehle, die Zuordnung der
+  EQ-Voreinstellungs-IDs zu Namen, und wo das Lade-Kennzeichen im Zustandsrahmen steht
+  (falls ueberhaupt).
 
 Deshalb traegt in der App jedes nicht verifizierte Feld ein rotes **unbestaetigt**, und
 deshalb ist der Nur-Lesen-Modus die Voreinstellung.

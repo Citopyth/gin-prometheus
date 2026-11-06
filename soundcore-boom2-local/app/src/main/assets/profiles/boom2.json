@@ -185,6 +185,14 @@
         "offset": 69,
         "verified": false,
         "note": "Unbestaetigt, im Mitschnitt 1."
+      },
+      {
+        "key": "charging",
+        "label": "Laedt",
+        "type": "BOOL",
+        "inStateFrame": false,
+        "verified": false,
+        "note": "Nur als Meldung beobachtet, nie in einem Zustandsrahmen - deshalb ohne Offset."
       }
     ],
     "notifications": [
@@ -215,6 +223,13 @@
         "offset": 0,
         "verified": false,
         "note": "Kam zweimal mit Wert 01, jeweils direkt nachdem das Licht angegangen sein duerfte (Helligkeit auf Maximum bei ausgeschaltetem Licht, und ein Moduswechsel). Wert 00 wurde nie beobachtet - die Deutung als Licht-Zustand ist plausibel, aber unbestaetigt."
+      },
+      {
+        "command": "01 04",
+        "field": "charging",
+        "offset": 0,
+        "verified": false,
+        "note": "Kam einmal mit Wert 01, unaufgefordert. Danach blieb der Akkustand 90 Minuten konstant, statt wie vorher zu fallen - die Box hing also am Strom. Fuer die Soundcore Space 2 ist 01 04 als Lade-Kennzeichen gemeldet. Wert 00 wurde nie beobachtet."
       }
     ]
   },

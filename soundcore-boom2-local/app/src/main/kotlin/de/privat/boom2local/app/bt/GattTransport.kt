@@ -273,6 +273,9 @@ class GattTransport(
 
             TransportTarget(
                 label = choice.serviceUuid,
+                // Deliberately no serviceUuid: a GATT service is not an RFCOMM service,
+                // and recording one as "the service that answered" would send the next
+                // classic connect to a UUID that was never an RFCOMM endpoint.
                 detail = "BLE/GATT, ${choice.reason}. Schreibt auf ${choice.writeUuid}, " +
                     "hoert auf ${choice.notifyUuid}, MTU $mtu.",
             )

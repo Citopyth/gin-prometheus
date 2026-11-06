@@ -16,6 +16,118 @@ class ServiceCandidatesTest {
 
     private val profile = TestFixtures.boom2Profile().transport
 
+    /** The decoy: same vendor prefix, accepts a connection, never answers. */
+    private val decoy = "0cf12d31-fac3-4553-bd80-d6832e7c3138"
+
+    /** A third custom service the real speaker turned out to advertise. */
+    private val other = "df21fe2c-2515-4fdb-8886-f12c4d67927c"
+
+    private val known = TestFixtures.boom2Profile().match.serviceUuids
+
+    @Test
+    fun `the model's own service beats another with the same prefix`() {
+        // The bug this test exists for: both services match the vendor prefix, and
+        // SDP handed the decoy over first. The app connected to it and went deaf.
+        val order = ServiceCandidates.order(
+            advertised = listOf(decoy, other, boom2, a2dp),
+            transport = profile,
+            knownUuids = known,
+        )
+        assertEquals(boom2, order.first().uuid)
+        assertEquals(ServiceCandidates.MODEL_SERVICE, order.first().origin)
+        assertTrue(
+            order.indexOfFirst { it.uuid == boom2 } < order.indexOfFirst { it.uuid == decoy },
+            order.toString(),
+        )
+    }
+
+    @Test
+    fun `without the profile's knowledge the prefix order is all there is`() {
+        // Shows that the fix really is the profile's knowledge, not luck: drop it and
+        // the decoy comes first again, exactly as it did on the real speaker.
+        val order = ServiceCandidates.order(
+            advertised = listOf(decoy, boom2),
+            transport = profile,
+        )
+        assertEquals(decoy, order.first().uuid)
+    }
+
+    @Test
+    fun `a service that already answered beats everything else`() {
+        val order = ServiceCandidates.order(
+            advertised = listOf(decoy, boom2, other),
+            transport = profile,
+            knownUuids = known,
+            provenUuid = other,
+        )
+        assertEquals(other, order.first().uuid)
+        assertEquals(ServiceCandidates.PROVEN_SERVICE, order.first().origin)
+        // And it is still offered only once, further down.
+        assertEquals(1, order.count { it.uuid == other })
+    }
+
+    @Test
+    fun `a proven service is offered even when the device stops advertising it`() {
+        val order = ServiceCandidates.order(
+            advertised = listOf(a2dp),
+            transport = profile,
+            provenUuid = boom2,
+        )
+        assertEquals(boom2, order.first().uuid)
+    }
+
+    @Test
+    fun `a nonsense proven service cannot poison the order`() {
+        val order = ServiceCandidates.order(
+            advertised = listOf(boom2),
+            transport = profile,
+            knownUuids = known,
+            provenUuid = "not-a-uuid",
+        )
+        assertEquals(boom2, order.first().uuid)
+        assertTrue(order.none { it.origin == ServiceCandidates.PROVEN_SERVICE })
+    }
+
+    @Test
+    fun `the model's service is still tried when the device does not advertise it`() {
+        val order = ServiceCandidates.order(
+            advertised = listOf(a2dp),
+            transport = profile.copy(fallbackUuids = emptyList()),
+            knownUuids = known,
+        )
+        assertEquals(boom2, order.single().uuid)
+        assertEquals(ServiceCandidates.MODEL_SERVICE_UNADVERTISED, order.single().origin)
+    }
+
+    @Test
+    fun `an excluded service is dropped no matter how well it ranks`() {
+        val order = ServiceCandidates.order(
+            advertised = listOf(decoy, boom2),
+            transport = profile,
+            knownUuids = known,
+            provenUuid = boom2,
+            excluded = setOf(boom2.uppercase()),
+        )
+        assertTrue(order.none { it.uuid == boom2 }, order.toString())
+        assertEquals(decoy, order.first().uuid)
+    }
+
+    @Test
+    fun `excluding everything leaves an empty order rather than a wrong one`() {
+        val all = ServiceCandidates.order(
+            advertised = listOf(decoy, boom2, other),
+            transport = profile,
+            knownUuids = known,
+        )
+        val none = ServiceCandidates.order(
+            advertised = listOf(decoy, boom2, other),
+            transport = profile,
+            knownUuids = known,
+            excluded = all.map { it.uuid }.toSet(),
+        )
+        assertEquals(emptyList(), none)
+    }
+
     @Test
     fun `the device's own service beats the profile's guesses`() {
         val order = ServiceCandidates.order(listOf(a2dp, boom2, avrcp), profile)

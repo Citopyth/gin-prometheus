@@ -5,8 +5,18 @@ import de.privat.boom2local.protocol.Command
 import de.privat.boom2local.protocol.Frame
 import kotlinx.coroutines.flow.SharedFlow
 
-/** What a transport ended up talking to, for display. */
-class TransportTarget(val label: String, val detail: String)
+/**
+ * What a transport ended up talking to.
+ *
+ * [serviceUuid] is the one field that is not just for display: the speaker advertises
+ * more than one vendor service and only one of them answers, so the app has to be able
+ * to record which one did. See [de.privat.boom2local.protocol.ProvenServices].
+ */
+class TransportTarget(
+    val label: String,
+    val detail: String,
+    val serviceUuid: String? = null,
+)
 
 /**
  * A way to carry frames to and from the speaker.

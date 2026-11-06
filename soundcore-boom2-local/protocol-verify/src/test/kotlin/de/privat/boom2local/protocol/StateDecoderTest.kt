@@ -77,7 +77,10 @@ class StateDecoderTest {
     fun `an empty body produces only problems`() {
         val state = decode(ByteArray(0))
         assertEquals(emptyList(), state.fields)
-        assertEquals(profile.state.fields.size, state.problems.size)
+        // Every field the state frame is supposed to carry. A field that only ever
+        // arrives as a notification is not missing from this frame, it was never in it.
+        assertEquals(profile.state.fields.count { it.inStateFrame }, state.problems.size)
+        assertTrue(profile.state.fields.any { !it.inStateFrame })
     }
 
     @Test
@@ -122,6 +125,15 @@ class StateDecoderTest {
         assertEquals("31", notification(Command(0x01, 0x09), 0x1f)?.value)
         assertEquals("an", notification(Command(0x02, 0x04), 1)?.value)
         assertEquals("aus", notification(Command(0x02, 0x04), 0)?.value)
+        // The exact bytes the real speaker sent when the cable went in, entry 30 of the
+        // capture: 09 ff 00 00 01 | 01 04 | 0b 00 | 01 | 1a. The field behind it has no
+        // place in any state frame, which must not stop the notification decoding.
+        assertEquals("an", notification(Command(0x01, 0x04), 1)?.value)
+        assertEquals("Laedt", notification(Command(0x01, 0x04), 1)?.label)
+        assertEquals(
+            false,
+            profile.state.fields.single { it.key == "charging" }.inStateFrame,
+        )
         // A command the profile does not describe is reported as unknown, not guessed.
         assertNull(notification(Command(0x7a, 0x7b), 1))
     }

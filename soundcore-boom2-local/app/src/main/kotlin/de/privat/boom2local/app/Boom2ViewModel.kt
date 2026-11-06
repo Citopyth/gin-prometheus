@@ -30,11 +30,15 @@ import de.privat.boom2local.protocol.Hex
 import de.privat.boom2local.protocol.Inbound
 import de.privat.boom2local.protocol.InboundClassifier
 import de.privat.boom2local.protocol.LengthSemantics
+import de.privat.boom2local.protocol.LinkLiveness
+import de.privat.boom2local.protocol.Liveness
+import de.privat.boom2local.protocol.LivenessPolicy
 import de.privat.boom2local.protocol.PacketCodec
 import de.privat.boom2local.protocol.PendingCommand
 import de.privat.boom2local.protocol.PendingCommands
 import de.privat.boom2local.protocol.PolicyDecision
 import de.privat.boom2local.protocol.ProfileEntry
+import de.privat.boom2local.protocol.ProvenServices
 import de.privat.boom2local.protocol.RawMode
 import de.privat.boom2local.protocol.ReconnectPolicy
 import de.privat.boom2local.protocol.SessionEvent
@@ -135,6 +139,29 @@ class Boom2ViewModel(application: Application) : AndroidViewModel(application) {
     private var frameJob: Job? = null
     private var retryJob: Job? = null
     private var watchdogJob: Job? = null
+
+    /** Which service each speaker has answered over, loaded once and kept in step. */
+    private var provenServices: Map<String, String> = pins.readProvenServices()
+
+    /**
+     * Services that came up this session and then said nothing.
+     *
+     * Session-scoped on purpose: a service can be mute because it is the wrong one, but
+     * also because the speaker was busy, so the verdict is never written to disk. It is
+     * cleared whenever the user starts a connection by hand.
+     */
+    private val deadServices = linkedSetOf<String>()
+
+    // What the live link has done so far, for [LinkLiveness]. Plain fields rather than
+    // UiState: nothing renders them, and they change on every single frame.
+    private var linkServiceUuid: String? = null
+    private var linkAddress: String? = null
+    private var linkConnectedAtMs: Long = 0
+    private var linkFramesIn: Int = 0
+    private var linkFramesOut: Int = 0
+
+    /** Set while a mute service is being dropped, so it cannot be dropped twice. */
+    private var droppingMuteService = false
 
     private val _ui = MutableStateFlow(UiState())
     val ui: StateFlow<UiState> = _ui.asStateFlow()
@@ -353,7 +380,13 @@ class Boom2ViewModel(application: Application) : AndroidViewModel(application) {
 
     // --- connection -------------------------------------------------------------------
 
-    fun connect() = startConnect(isRetry = false)
+    fun connect() {
+        // A connection the user asked for starts from a clean slate: whatever was mute
+        // ten minutes ago may well answer now.
+        deadServices.clear()
+        droppingMuteService = false
+        startConnect(isRetry = false)
+    }
 
     private fun startConnect(isRetry: Boolean) {
         val state = _ui.value
@@ -386,6 +419,8 @@ class Boom2ViewModel(application: Application) : AndroidViewModel(application) {
         val rfcommCandidates = finder.resolveServiceUuids(
             found = device,
             profile = profile,
+            provenUuid = ProvenServices.proven(provenServices, device.address),
+            excluded = deadServices,
             includeStandardProfiles = state.tryStandardProfiles,
         ).map { RfcommTransport.UuidCandidate(it.uuid, it.origin) }
 
@@ -435,6 +470,14 @@ class Boom2ViewModel(application: Application) : AndroidViewModel(application) {
                 frameJob = collector
                 try {
                     val target = transport.connect(device.device)
+                    linkServiceUuid = target.serviceUuid
+                    // Pinned here, not read back later: the user can change the
+                    // selection while a link is up, and this record must stay about
+                    // the speaker the link was actually made to.
+                    linkAddress = device.address
+                    linkConnectedAtMs = now()
+                    linkFramesIn = 0
+                    linkFramesOut = 0
                     emit(
                         SessionEvent.Established(
                             transport = transport.name,
@@ -533,6 +576,7 @@ class Boom2ViewModel(application: Application) : AndroidViewModel(application) {
             while (true) {
                 delay(WATCHDOG_TICK_MS)
                 checkForSilence()
+                checkForLiveness()
             }
         }
     }
@@ -565,6 +609,10 @@ class Boom2ViewModel(application: Application) : AndroidViewModel(application) {
     private fun closeLink() {
         watchdogJob?.cancel()
         watchdogJob = null
+        linkServiceUuid = null
+        linkAddress = null
+        linkFramesIn = 0
+        linkFramesOut = 0
         _ui.update { it.copyWith(pending = it.pending.cleared(), stalled = false) }
         frameJob?.cancel()
         frameJob = null
@@ -601,7 +649,7 @@ class Boom2ViewModel(application: Application) : AndroidViewModel(application) {
                 }
 
                 PolicyDecision.Allowed -> {
-                    active.send(Command.parse(step.command), Hex.decode(step.payload))
+                    transmit(active, Command.parse(step.command), Hex.decode(step.payload))
                     kotlinx.coroutines.delay(step.delayMsAfter.coerceIn(0L, 5_000L))
                 }
             }
@@ -611,6 +659,8 @@ class Boom2ViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun onFrame(frame: Frame) {
         val profile = _ui.value.profile ?: return
+        linkFramesIn++
+        if (linkFramesIn == 1) rememberWorkingService()
         // Anything coming back for a command answers it, whatever kind of answer it is.
         _ui.update {
             it.copyWith(pending = it.pending.answered(frame.command), stalled = false)
@@ -708,13 +758,114 @@ class Boom2ViewModel(application: Application) : AndroidViewModel(application) {
      * No policy check: this is the identical frame a moment ago, which the policy
      * already let through, and [SilenceResponse] only ever offers reads.
      */
+    /**
+     * Records the service the speaker just spoke over, so the next connect starts there.
+     *
+     * The Boom 2 advertises two services under the same vendor prefix. One carries the
+     * control protocol; the other accepts the socket and then never answers, and the
+     * order Android hands them over in is not fixed. One captured session connected to
+     * the mute one and sat there for three minutes reporting a healthy link.
+     *
+     * An arriving frame is the only hard evidence of which is which, so this is called
+     * exactly once per link, on the first one.
+     */
+    private fun rememberWorkingService() {
+        val uuid = linkServiceUuid ?: return
+        val address = linkAddress ?: return
+        val next = ProvenServices.remember(provenServices, address, uuid)
+        if (next === provenServices) return
+        provenServices = next
+        pins.writeProvenServices(next)
+        audit.add(
+            AuditKind.INFO,
+            "Dienst $uuid antwortet - wird fuer diese Box gemerkt",
+            timestampMs = now(),
+        )
+        _ui.update { it.copyWith(audit = audit.snapshot()) }
+    }
+
+    /**
+     * Drops a link that came up and then stayed mute, and tries the next service.
+     *
+     * A connected socket proves only that something accepted it, and this speaker has a
+     * service that does exactly that and nothing else. The rule is in [LinkLiveness];
+     * all that happens here is noting the service as useless for this session and
+     * starting over, which now skips it.
+     */
+    private fun checkForLiveness() {
+        if (droppingMuteService) return
+        if (_ui.value.session.phase != SessionPhase.CONNECTED) return
+        val verdict = LinkLiveness.verdict(
+            policy = LivenessPolicy(),
+            connectedAtMs = linkConnectedAtMs,
+            framesReceived = linkFramesIn,
+            framesSent = linkFramesOut,
+            nowMs = now(),
+        )
+        if (verdict !is Liveness.Dead) return
+
+        // The teardown cancels the watchdog, which is the very job this check runs in,
+        // so it is handed to the view model's own scope instead of relying on nothing
+        // below here ever suspending. The flag keeps the next tick from queueing a
+        // second drop in the gap.
+        droppingMuteService = true
+        viewModelScope.launch { dropMuteService(verdict.reason) }
+    }
+
+    private fun dropMuteService(reason: String) {
+        val uuid = linkServiceUuid?.lowercase()
+        val fresh = uuid != null && uuid !in deadServices
+        audit.add(
+            AuditKind.ERROR,
+            buildString {
+                append(reason)
+                if (uuid != null) append(" Betroffen: $uuid.")
+                if (fresh) append(" Wird uebersprungen, naechster Dienst folgt.")
+            },
+            timestampMs = now(),
+        )
+        val lostFrom = _ui.value.session.transport
+        if (uuid != null) deadServices += uuid
+        closeLink()
+        _ui.update { it.copyWith(audit = audit.snapshot()) }
+        droppingMuteService = false
+        if (fresh) {
+            // Not a dropped link but a deliberate change of plan, so the session goes
+            // back to idle rather than into the retry counter: the next attempt is a
+            // first attempt against a different service.
+            emit(SessionEvent.UserDisconnected)
+            startConnect(isRetry = false)
+        } else {
+            // Nothing left to switch to - BLE, or a service already written off. Report
+            // it as a lost link and let the reconnect policy decide.
+            emit(SessionEvent.LinkLost(lostFrom ?: "", reason))
+        }
+    }
+
+    /**
+     * Every outbound frame goes through here.
+     *
+     * Not decoration: [checkForLiveness] only condemns a silent link once something was
+     * actually asked of it, so a send that bypassed the count would let a mute service
+     * look merely idle.
+     */
+    private suspend fun transmit(active: ControlTransport, command: Command, payload: ByteArray) {
+        linkFramesOut++
+        active.send(command, payload)
+    }
+
+    private suspend fun transmitFrame(active: ControlTransport, raw: ByteArray) {
+        linkFramesOut++
+        active.sendFrame(raw)
+    }
+
     private fun resend(entry: PendingCommand) {
         val active = link ?: return
         if (!active.isConnected) return
         viewModelScope.launch {
             try {
                 val payload = Hex.decode(entry.payloadHex)
-                active.send(entry.command, payload)
+                transmit(active, entry.command, payload)
                 _ui.update {
                     it.copyWith(
                         pending = it.pending.sent(
@@ -804,7 +955,7 @@ class Boom2ViewModel(application: Application) : AndroidViewModel(application) {
         }
         viewModelScope.launch {
             try {
-                active.send(spec.commandAddress, payload)
+                transmit(active, spec.commandAddress, payload)
                 _ui.update {
                     it.copyWith(
                         pending = it.pending.sent(
@@ -862,7 +1013,7 @@ class Boom2ViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 viewModelScope.launch {
                     try {
-                        active.send(command, payload)
+                        transmit(active, command, payload)
                         _ui.update {
                             it.copyWith(
                                 // A hand-entered command counts as a write: its
@@ -925,7 +1076,7 @@ class Boom2ViewModel(application: Application) : AndroidViewModel(application) {
                     timestampMs = now(),
                 )
                 try {
-                    transport.sendFrame(frame)
+                    transmitFrame(transport, frame)
                 } catch (e: Exception) {
                     results += "$semantics: Senden fehlgeschlagen (${e.message})"
                     break

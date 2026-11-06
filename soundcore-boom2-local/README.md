@@ -222,7 +222,8 @@ Die App kann die Frames ueber beide Bluetooth-Wege schicken, umschaltbar im Reit
 
 - **RFCOMM (klassisch)** — der Weg, den alle veroeffentlichten Quellen beschreiben. Die
   App probiert die Dienste, die deine Box per SDP wirklich anbietet, zuerst die
-  herstellerspezifischen, danach erst die geratenen Kandidaten aus dem Profil.
+  herstellerspezifischen, danach erst die geratenen Kandidaten aus dem Profil. Welcher
+  zuerst kommt, entscheidet `ServiceCandidates` im Protokoll-Kern — siehe unten.
 - **BLE (GATT)** — fuer den Fall, dass dieses Modell den anderen Weg geht. Welcher
   GATT-Dienst der Steuerkanal ist, entscheidet `GattSelector` im Protokoll-Kern: gesucht
   wird ein nicht-standardisierter Dienst mit je einer beschreibbaren und einer meldenden
@@ -241,6 +242,36 @@ Regel eine Ebene tiefer. Die Liste ist nicht vollstaendig und steht im Profil un
 
 Auch der BLE-Weg **scannt nicht**: er verbindet direkt zum bereits gekoppelten Geraet.
 Die Standort-Berechtigung bleibt damit aussen vor.
+
+## Nicht jeder Dienst, der die Verbindung annimmt, ist der richtige
+
+Die Boom 2 bietet **mehrere** herstellerspezifische Dienste an, die sich in einem
+Hex-Zeichen unterscheiden: `…d6832e7b3138` und `…d6832e7c3138`. Beide passen auf das
+Hersteller-Praefix, beide nehmen eine RFCOMM-Verbindung an — aber nur der erste
+antwortet. Der zweite schweigt. In welcher Reihenfolge Android die beiden herausgibt,
+liegt nicht fest, und in einem Mitschnitt hat die App genau das Falsche gewaehlt: elf
+Pakete raus, nichts zurueck, drei Minuten lang als gesunde Verbindung angezeigt.
+
+Dagegen zwei Regeln, beide im Protokoll-Kern und beide unit-getestet:
+
+**Die Reihenfolge der Kandidaten** (`ServiceCandidates`) stellt Wissen vor Vermutung:
+
+1. der Dienst, ueber den *diese* Box schon einmal geantwortet hat. Die App merkt sich
+   das — eine Zeile pro Box in ihrem privaten Speicher, hoechstens acht Boxen, loeschbar
+   mit dem Pin;
+2. der Dienst, den das Profil als Steuerkanal dieses Modells nennt;
+3. erst dann ein reiner Praefix-Treffer;
+4. danach alles andere Herstellerspezifische, die Rueckfall-Kandidaten aus dem Profil,
+   SPP, und auf Wunsch die Standardprofile.
+
+**Eine Verbindung muss sich als lebendig erweisen** (`LinkLiveness`). Kommt nach einer
+Gnadenfrist von sechs Sekunden auf eine gestellte Frage kein einziger Rahmen zurueck,
+gilt der Dienst als tot: die App trennt, schliesst ihn **fuer diese Sitzung** aus und
+probiert den naechsten. Nicht fuer immer — ein Dienst kann auch schweigen, weil die Box
+gerade beschaeftigt ist; ein Druck auf *Verbinden* fuellt die Liste wieder auf.
+
+Hat die App noch nichts gefragt, zaehlt Schweigen nicht. Sonst wuerde jede Verbindung
+sterben, bei der du das Handy einfach weglegst.
 
 ## Was bei einem Abbruch passiert
 

@@ -205,9 +205,18 @@ class DeviceFinder(private val context: Context) {
     fun resolveServiceUuids(
         found: FoundDevice,
         profile: DeviceProfile,
+        provenUuid: String? = null,
+        excluded: Set<String> = emptySet(),
         includeStandardProfiles: Boolean = false,
     ): List<UuidChoice> = ServiceCandidates
-        .order(found.allUuids, profile.transport, includeStandardProfiles)
+        .order(
+            advertised = found.allUuids,
+            transport = profile.transport,
+            knownUuids = profile.match.serviceUuids,
+            provenUuid = provenUuid,
+            excluded = excluded,
+            includeStandardProfiles = includeStandardProfiles,
+        )
         .mapNotNull { candidate ->
             val uuid = try {
                 UUID.fromString(candidate.uuid)

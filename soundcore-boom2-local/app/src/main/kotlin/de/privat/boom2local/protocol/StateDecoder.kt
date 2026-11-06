@@ -51,6 +51,9 @@ object StateDecoder {
         }
 
         for (spec in profile.state.fields) {
+            // A value the speaker only ever volunteers has no place in this frame, and
+            // reporting it as unreadable would call every complete state read broken.
+            if (!spec.inStateFrame) continue
             val decoded = decodeField(spec, body, problems)
             if (decoded != null) fields += decoded
         }

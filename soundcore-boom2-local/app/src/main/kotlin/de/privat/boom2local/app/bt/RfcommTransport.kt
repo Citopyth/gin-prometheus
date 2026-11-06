@@ -122,6 +122,7 @@ class RfcommTransport(
                         )
                         return@withContext TransportTarget(
                             label = candidate.uuid.toString(),
+                            serviceUuid = candidate.uuid.toString(),
                             detail = "RFCOMM ${if (insecure) "ohne" else "mit"} " +
                                 "Authentifizierung, ${candidate.origin}",
                         )

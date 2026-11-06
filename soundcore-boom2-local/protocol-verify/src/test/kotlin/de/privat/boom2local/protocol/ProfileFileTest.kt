@@ -71,22 +71,41 @@ class ProfileFileTest {
                 "01 09" to "volume",
                 "02 04" to "bassUp",
                 "0e 09" to "lightOn",
+                "01 04" to "charging",
             ),
             profile.state.notifications.associate { it.command to it.field },
         )
     }
 
     @Test
+    fun `a field outside the state frame exists for a notification and nothing else`() {
+        // Without this, "inStateFrame: false" would be a way to park a field nobody
+        // ever reads, and the profile would quietly grow values the app cannot show.
+        val outside = profile.state.fields.filter { !it.inStateFrame }
+        assertTrue(outside.isNotEmpty())
+        for (field in outside) {
+            assertTrue(
+                profile.state.notifications.any { it.field == field.key },
+                "field '${field.key}' is in no state frame and in no notification either",
+            )
+            assertTrue(
+                !field.note.isNullOrBlank(),
+                "field '${field.key}' has no offset, so it owes the reader an explanation",
+            )
+        }
+    }
+
+    @Test
     fun `a notification claims confirmation only where the capture gave it`() {
         // Three were pinned down by matching their values against a state byte over a
-        // long capture. The fourth only ever appeared with one value, so its reading is
-        // plausible and nothing more.
+        // long capture. The other two only ever appeared with one value, so their
+        // reading is plausible and nothing more.
         assertEquals(
             setOf("01 03", "01 09", "02 04"),
             profile.state.notifications.filter { it.verified }.map { it.command }.toSet(),
         )
         assertEquals(
-            setOf("0e 09"),
+            setOf("0e 09", "01 04"),
             profile.state.notifications.filterNot { it.verified }.map { it.command }.toSet(),
         )
     }
