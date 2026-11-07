@@ -89,9 +89,15 @@ Jetzt:
 - **Die Verstaerkung ist in Dezibel** und rastet in ganzen Schritten von -6,0 bis +6,0
   dB ein. Nicht nur in der Oberflaeche: die Allowlist prueft dasselbe Raster, ein
   handgesetzter Wert kommt also auch nicht durch. `f0` ist nicht mehr erreichbar.
-- **Die Voreinstellungen der Box** gibt es als zehn Felder, 0 bis 9. Welche wie klingt,
-  sagt die Box nicht - das ist Sache des Ohrs, und jeder Versuch steht mit Uhrzeit im
-  Protokoll. Der Index 255, der damals quittiert wurde, ist gesperrt.
+- **Die Voreinstellungen der Box** stehen in einem Auswahlmenue, 0 bis 9, und du kannst
+  sie **selbst benennen**. Die naheliegende Loesung waere, die Namen mitzuliefern -
+  Signature, Bass Booster und so weiter -, aber die Liste gehoert zu *anderen* Modellen.
+  Keine Quelle sagt, welcher Index auf einer Boom 2 was bedeutet, und zehn selbstsichere
+  Etiketten ueber zehn unbekannten Zahlen waeren dieselbe geerbte Behauptung, die schon
+  neun EQ-Baender an die falschen Offsets gesetzt hat - nur wuerdest du diesmal das eine
+  hoeren und das andere lesen. Also: antippen, hinhoeren, Namen eintragen. Er bleibt
+  gespeichert und steht danach im Menue. Der Index 255, der damals quittiert wurde, ist
+  gesperrt.
 
 **Was "zurueck" ehrlich heisst:** zurueck auf einen flachen Equalizer, nicht auf den
 Zustand, in dem die Box ab Werk war. Den hat niemand gelesen, bevor diese App das erste
@@ -159,8 +165,15 @@ Was es verlaesslich erreicht:
 
 Nachsehen laesst es sich vielleicht von hier aus: der Reiter **Sicherheit** hat einen
 Knopf, der die Box nach ihrer Kopplungsliste fragt (`0b:01`/`0b:02`, bei Q4 fuer die
-Space 2 beschrieben). Diese Box hat darauf in **keinem** Mitschnitt geantwortet. Die
-Abfrage liest nur, sie aendert nichts.
+Space 2 beschrieben). Die Abfrage liest nur, sie aendert nichts.
+
+Dieser Knopf sah lange tot aus, und das war ein Fehler: er schickte die Abfrage, und die
+Karte aenderte sich nie. Eine Antwort landete nur im Protokoll als undeutbarer Rahmen,
+Schweigen ebenfalls - von aussen nicht zu unterscheiden, und beides nicht von einem
+kaputten Knopf. Jetzt zeigt die Karte alle vier Zustaende: noch nicht gefragt, wartet,
+hat geantwortet (mit den Rohbytes, ausdruecklich ungedeutet), oder fuenf Sekunden lang
+nichts gesagt. Diese Box hat bisher in **keinem** Mitschnitt geantwortet - das ist dann
+eine Aussage ueber die Box, nicht ueber die App.
 
 Umgekehrt ist es dicht: die App redet nur mit der Box, an die sie gebunden ist - eine
 MAC-Adresse, jedes andere Geraet wird abgelehnt. Das schuetzt die Box vor dieser App,

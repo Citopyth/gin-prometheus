@@ -40,10 +40,13 @@ import de.privat.boom2local.protocol.LinkLiveness
 import de.privat.boom2local.protocol.Liveness
 import de.privat.boom2local.protocol.LivenessPolicy
 import de.privat.boom2local.protocol.PacketCodec
+import de.privat.boom2local.protocol.PairedQuery
+import de.privat.boom2local.protocol.PairedReply
 import de.privat.boom2local.protocol.PendingCommand
 import de.privat.boom2local.protocol.PendingCommands
 import de.privat.boom2local.protocol.PolicyDecision
 import de.privat.boom2local.protocol.ProbeResult
+import de.privat.boom2local.protocol.PresetNames
 import de.privat.boom2local.protocol.ProfileEntry
 import de.privat.boom2local.protocol.ProvenServices
 import de.privat.boom2local.protocol.RawMode
@@ -119,6 +122,10 @@ class UiState(
     val probeBaseline: String? = null,
     /** What each finished step concluded, oldest first. */
     val probeFindings: List<String> = emptyList(),
+    /** What the person named each equaliser preset, after hearing it. */
+    val presetNames: Map<Int, String> = emptyMap(),
+    /** Where the "who else may use this speaker" question stands. */
+    val pairedQuery: PairedQuery = PairedQuery(),
     val audit: List<AuditEntry> = emptyList(),
     val capture: CaptureReport? = null,
     /** A fresh SDP query is running. */
@@ -247,6 +254,7 @@ class Boom2ViewModel(application: Application) : AndroidViewModel(application) {
                 readOnly = it.readOnly,
                 rawMode = it.rawMode,
                 pinnedAddress = pins.read(),
+                presetNames = pins.readPresetNames(),
                 transport = it.transport,
                 audit = audit.snapshot(),
             )
@@ -647,6 +655,7 @@ class Boom2ViewModel(application: Application) : AndroidViewModel(application) {
                 delay(WATCHDOG_TICK_MS)
                 checkForSilence()
                 checkForLiveness()
+                _ui.update { it.copyWith(pairedQuery = it.pairedQuery.checked(now())) }
             }
         }
     }
@@ -813,7 +822,22 @@ class Boom2ViewModel(application: Application) : AndroidViewModel(application) {
                     hex = Hex.encode(inbound.body),
                     timestampMs = now(),
                 )
-                _ui.update { it.copyWith(audit = audit.snapshot()) }
+                // The pairing list has no decoder - no source describes the format for
+                // this model - but an answer still has to reach the screen. Logging it
+                // and leaving the card blank is what made the button look dead.
+                val paired = isPairedListAnswer(inbound.command)
+                _ui.update {
+                    it.copyWith(
+                        pairedQuery = if (paired) {
+                            it.pairedQuery.answered(
+                                PairedReply(inbound.command, Hex.encode(inbound.body), now()),
+                            )
+                        } else {
+                            it.pairedQuery
+                        },
+                        audit = audit.snapshot(),
+                    )
+                }
             }
         }
     }
@@ -982,10 +1006,14 @@ class Boom2ViewModel(application: Application) : AndroidViewModel(application) {
      * pairing list is how you unpair yourself.
      */
     fun readPairedDevices() {
-        for (key in listOf("pairedDevices1", "pairedDevices2")) {
-            specFor(key)?.let { send(it) }
-        }
+        val specs = listOf("pairedDevices1", "pairedDevices2").mapNotNull { specFor(it) }
+        if (specs.isEmpty()) return
+        _ui.update { it.copyWith(pairedQuery = it.pairedQuery.asked(now())) }
+        specs.forEach { send(it) }
     }
+
+    /** True when this frame is an answer to the pairing-list question. */
+    private fun isPairedListAnswer(command: Command) = command.category == 0x0b
 
     // --- band mask search -------------------------------------------------------------
 
@@ -1194,9 +1222,22 @@ class Boom2ViewModel(application: Application) : AndroidViewModel(application) {
      */
     fun applyPreset(index: Int) = applySound(
         commandKey = "eqPreset",
-        label = "Voreinstellung $index",
+        label = PresetNames.label(_ui.value.presetNames, index),
         arguments = mapOf("preset" to index),
     )
+
+    /** Records what a preset turned out to sound like. Blank clears it. */
+    fun renamePreset(index: Int, name: String) {
+        val next = PresetNames.rename(_ui.value.presetNames, index, name)
+        if (next == _ui.value.presetNames) return
+        pins.writePresetNames(next)
+        audit.add(
+            AuditKind.INFO,
+            "Voreinstellung $index heisst jetzt \"${PresetNames.label(next, index)}\"",
+            timestampMs = now(),
+        )
+        _ui.update { it.copyWith(presetNames = next, audit = audit.snapshot()) }
+    }
 
     /** Moves every equaliser band to the same gain, in whole decibels. */
     fun applyAllBands(raw: Int) = applySound(
@@ -1605,6 +1646,8 @@ private fun UiState.copyWith(
     probeStep: Int = this.probeStep,
     probeBaseline: String? = this.probeBaseline,
     probeFindings: List<String> = this.probeFindings,
+    presetNames: Map<Int, String> = this.presetNames,
+    pairedQuery: PairedQuery = this.pairedQuery,
     audit: List<AuditEntry> = this.audit,
     capture: CaptureReport? = this.capture,
     sdpBusy: Boolean = this.sdpBusy,
@@ -1642,6 +1685,8 @@ private fun UiState.copyWith(
     probeStep = probeStep,
     probeBaseline = probeBaseline,
     probeFindings = probeFindings,
+    presetNames = presetNames,
+    pairedQuery = pairedQuery,
     audit = audit,
     capture = capture,
     sdpBusy = sdpBusy,

@@ -1,6 +1,7 @@
 package de.privat.boom2local.app.ui
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -11,16 +12,19 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
-import androidx.compose.material3.FilterChip
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -29,6 +33,7 @@ import de.privat.boom2local.app.Boom2ViewModel
 import de.privat.boom2local.app.UiState
 import de.privat.boom2local.protocol.Decibels
 import de.privat.boom2local.protocol.EqProbe
+import de.privat.boom2local.protocol.PresetNames
 import de.privat.boom2local.protocol.SoundHistory
 import kotlin.math.roundToInt
 
@@ -102,24 +107,59 @@ fun SoundTab(state: UiState, model: Boom2ViewModel) {
 
         SectionCard(
             "Voreinstellungen der Box",
-            "Zehn Indizes, die die Box akzeptiert. Was jeder klingt, sagt sie nicht.",
+            PresetNames.describe(state.presetNames),
         ) {
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                for (index in 0..9) {
-                    FilterChip(
-                        selected = false,
-                        onClick = { model.applyPreset(index) },
-                        enabled = canSend,
-                        label = { Text("$index") },
-                    )
+            var chosen by remember { mutableIntStateOf(0) }
+            var open by remember { mutableStateOf(false) }
+            var typed by remember(chosen, state.presetNames) {
+                mutableStateOf(state.presetNames[chosen].orEmpty())
+            }
+
+            Box {
+                OutlinedButton(onClick = { open = true }) {
+                    Text(PresetNames.label(state.presetNames, chosen) + "  v")
+                }
+                DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+                    for (index in 0 until PresetNames.COUNT) {
+                        DropdownMenuItem(
+                            text = { Text(PresetNames.label(state.presetNames, index)) },
+                            onClick = {
+                                chosen = index
+                                open = false
+                            },
+                        )
+                    }
                 }
             }
+            Button(onClick = { model.applyPreset(chosen) }, enabled = canSend) {
+                Text("Abspielen")
+            }
+
+            HorizontalDivider()
             Note(
-                "Die Methode ist das Ohr: eine antippen, hoeren, die naechste. Jede " +
-                    "ersetzt die vorherige, und jeder Schritt steht im Protokoll mit " +
-                    "Uhrzeit. Sag mir, welche dir gefaellt, dann bekommt sie im Profil " +
-                    "einen Namen statt einer Nummer.",
+                "Wie sie heissen, weiss ich nicht - und raten waere hier besonders " +
+                    "schaedlich: die Namensliste aus den Soundcore-Apps gilt fuer andere " +
+                    "Modelle, und du wuerdest eines hoeren und etwas anderes lesen. " +
+                    "Deshalb traegst du sie selbst ein, waehrend du hoerst. Sie bleiben " +
+                    "gespeichert und stehen danach im Menue oben.",
             )
+            OutlinedTextField(
+                value = typed,
+                onValueChange = { entered ->
+                    typed = entered.take(PresetNames.MAX_LENGTH)
+                },
+                label = { Text("Name fuer Voreinstellung $chosen") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = { model.renamePreset(chosen, typed) }) {
+                    Text("Namen merken")
+                }
+                OutlinedButton(onClick = { model.renamePreset(chosen, "") }) {
+                    Text("Namen loeschen")
+                }
+            }
             Note(
                 "Index 255 ging am 05.11.2026 einmal raus und wurde quittiert, obwohl es " +
                     "ihn fast sicher nicht gibt. Das Profil laesst jetzt nur 0 bis 9 zu.",

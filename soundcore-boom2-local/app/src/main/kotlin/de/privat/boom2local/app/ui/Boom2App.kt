@@ -636,9 +636,8 @@ private fun SecurityTab(state: UiState, model: Boom2ViewModel) {
             )
             HorizontalDivider()
             Note(
-                "Nachsehen kannst du es von hier aus - vielleicht. Die Box wird nach " +
-                    "ihrer Kopplungsliste gefragt; geantwortet hat sie darauf in keinem " +
-                    "einzigen Mitschnitt. Die Abfrage liest nur, sie aendert nichts.",
+                "Nachsehen kannst du es von hier aus - vielleicht. Die Abfrage liest " +
+                    "nur, sie aendert nichts.",
             )
             Button(
                 onClick = { model.readPairedDevices() },
@@ -647,6 +646,14 @@ private fun SecurityTab(state: UiState, model: Boom2ViewModel) {
                 Text("Kopplungsliste abfragen")
             }
             if (!state.connected) Note("Nicht verbunden.")
+            // Every outcome gets shown. Before this the button sent the query and the
+            // card never changed, so an answer and a refusal looked identical - and
+            // identical to a dead button.
+            Note(state.pairedQuery.summary)
+            for (reply in state.pairedQuery.replies) {
+                Mono("${reply.command}  ${wallClock(reply.atMs)}")
+                Mono(reply.bodyHex)
+            }
             Note(
                 "Umgekehrt ist es dicht: diese App redet nur mit der Box, an die sie " +
                     "gebunden ist - eine MAC-Adresse, jedes andere Geraet wird abgelehnt. " +
