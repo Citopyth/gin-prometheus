@@ -143,7 +143,19 @@ class ProfileFileTest {
         val notAcknowledged = profile.commands
             .filter { it.kind == CommandKind.WRITE && !it.acknowledged }
             .map { it.key }
-        assertEquals(listOf("lightMode"), notAcknowledged)
+        // lightMode was sent and drew no acknowledgement. eqProbeBand has never been
+        // sent at all: it is the research command, and marking it acknowledged because
+        // a *different* payload on the same address was acknowledged would be exactly
+        // the kind of inherited claim this profile exists to avoid.
+        assertEquals(listOf("eqProbeBand", "lightMode"), notAcknowledged)
+        for (key in notAcknowledged) {
+            val spec = profile.commands.single { it.key == key }
+            assertTrue(
+                spec.note?.contains("NICHT quittiert") == true ||
+                    spec.note?.contains("nicht quittiert") == true,
+                "command '$key' is not acknowledged and should say so plainly",
+            )
+        }
     }
 
     @Test
@@ -322,7 +334,7 @@ class ProfileFileTest {
     fun `the write commands are the ones the ui offers and nothing more`() {
         assertEquals(
             setOf(
-                "bassUp", "eqPreset", "eqFlat", "eqAllBands",
+                "bassUp", "eqPreset", "eqFlat", "eqAllBands", "eqProbeBand",
                 "lightOn", "lightBrightness", "lightMode",
             ),
             profile.commands.filter { it.kind == CommandKind.WRITE }.map { it.key }.toSet(),

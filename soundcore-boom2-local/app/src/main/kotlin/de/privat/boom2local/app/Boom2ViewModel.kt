@@ -28,6 +28,7 @@ import de.privat.boom2local.protocol.DecodedState
 import de.privat.boom2local.protocol.DeviceGate
 import de.privat.boom2local.protocol.DeviceProfile
 import de.privat.boom2local.protocol.ForeignChange
+import de.privat.boom2local.protocol.EqProbe
 import de.privat.boom2local.protocol.Frame
 import de.privat.boom2local.protocol.GateDecision
 import de.privat.boom2local.protocol.GattService
@@ -42,6 +43,7 @@ import de.privat.boom2local.protocol.PacketCodec
 import de.privat.boom2local.protocol.PendingCommand
 import de.privat.boom2local.protocol.PendingCommands
 import de.privat.boom2local.protocol.PolicyDecision
+import de.privat.boom2local.protocol.ProbeResult
 import de.privat.boom2local.protocol.ProfileEntry
 import de.privat.boom2local.protocol.ProvenServices
 import de.privat.boom2local.protocol.RawMode
@@ -111,6 +113,12 @@ class UiState(
      * is, is a timestamped record of everything other than this app that touched it.
      */
     val foreignChanges: List<ForeignChange> = emptyList(),
+    /** Which step of the band-mask search is next, 0-based. */
+    val probeStep: Int = 0,
+    /** The flat-curve state body this step compares against, as hex. */
+    val probeBaseline: String? = null,
+    /** What each finished step concluded, oldest first. */
+    val probeFindings: List<String> = emptyList(),
     val audit: List<AuditEntry> = emptyList(),
     val capture: CaptureReport? = null,
     /** A fresh SDP query is running. */
@@ -210,6 +218,11 @@ class Boom2ViewModel(application: Application) : AndroidViewModel(application) {
      * exactly like someone else's doing. See [TamperWatch].
      */
     private var lastOwnChangeAtMs: Long? = null
+
+    /** What the next state frame is for, when it is for the band-mask search. */
+    private enum class ProbePhase { NONE, BASELINE, COMPARE }
+
+    private var probePhase = ProbePhase.NONE
 
     private val _ui = MutableStateFlow(UiState())
     val ui: StateFlow<UiState> = _ui.asStateFlow()
@@ -725,8 +738,15 @@ class Boom2ViewModel(application: Application) : AndroidViewModel(application) {
             it.copyWith(pending = it.pending.answered(frame.command), stalled = false)
         }
         when (val inbound = InboundClassifier.classify(profile, frame)) {
-            is Inbound.State -> _ui.update {
-                it.copyWith(deviceState = inbound.decoded, audit = audit.snapshot())
+            is Inbound.State -> {
+                _ui.update {
+                    it.copyWith(deviceState = inbound.decoded, audit = audit.snapshot())
+                }
+                when (probePhase) {
+                    ProbePhase.BASELINE -> takeProbeBaseline(inbound.decoded)
+                    ProbePhase.COMPARE -> compareProbe(inbound.decoded)
+                    ProbePhase.NONE -> Unit
+                }
             }
 
             is Inbound.Notification -> {
@@ -962,6 +982,108 @@ class Boom2ViewModel(application: Application) : AndroidViewModel(application) {
     fun readPairedDevices() {
         for (key in listOf("pairedDevices1", "pairedDevices2")) {
             specFor(key)?.let { send(it) }
+        }
+    }
+
+    // --- band mask search -------------------------------------------------------------
+
+    /**
+     * Step one: flatten the curve, then read it, so the comparison has a known floor.
+     *
+     * Three buttons rather than one sequence, deliberately. The whole method depends on
+     * the speaker answering 01:01, and it does not always - in several captures that
+     * read went unanswered. An automatic run would hide which of the three steps failed
+     * behind a single "nothing found", and a method you cannot see failing is a method
+     * that invents results.
+     */
+    fun probeBaseline() {
+        val flat = specFor(SoundHistory.NEUTRAL_COMMAND_KEY) ?: return
+        audit.add(
+            AuditKind.INFO,
+            "Maskensuche: neutral setzen und Zustand lesen (Grundlinie)",
+            timestampMs = now(),
+        )
+        _ui.update { it.copyWith(probeBaseline = null) }
+        send(flat)
+        probePhase = ProbePhase.BASELINE
+        readState()
+    }
+
+    /** Step two: set exactly one mask bit to +2.0 dB. The gain is not ours to choose. */
+    fun probeSend() {
+        val state = _ui.value
+        if (state.probeBaseline == null) {
+            note("Erst Schritt 1: ohne Grundlinie gibt es nichts zu vergleichen.")
+            return
+        }
+        val step = EqProbe.plan().getOrNull(state.probeStep) ?: run {
+            note("Alle ${EqProbe.STEPS} Schritte sind durch.")
+            return
+        }
+        val spec = specFor(EqProbe.COMMAND_KEY) ?: return
+        audit.add(AuditKind.INFO, "Maskensuche: ${step.label}", timestampMs = now())
+        applySound(
+            commandKey = spec.key,
+            label = step.label,
+            arguments = mapOf(
+                "maskHigh" to step.maskHigh,
+                "maskLow" to step.maskLow,
+                "band" to 0,
+            ),
+        )
+    }
+
+    /** Step three: read the curve again and see which single band moved. */
+    fun probeCompare() {
+        if (_ui.value.probeBaseline == null) {
+            note("Erst Schritt 1.")
+            return
+        }
+        probePhase = ProbePhase.COMPARE
+        readState()
+    }
+
+    /** Forgets the search without touching the speaker. */
+    fun probeReset() {
+        probePhase = ProbePhase.NONE
+        _ui.update { it.copyWith(probeStep = 0, probeBaseline = null, probeFindings = emptyList()) }
+    }
+
+    private fun takeProbeBaseline(decoded: DecodedState) {
+        probePhase = ProbePhase.NONE
+        _ui.update { it.copyWith(probeBaseline = decoded.bodyHex) }
+        audit.add(
+            AuditKind.INFO,
+            "Maskensuche: Grundlinie steht (${decoded.bodySize} Byte)",
+            timestampMs = now(),
+        )
+        _ui.update { it.copyWith(audit = audit.snapshot()) }
+    }
+
+    private fun compareProbe(decoded: DecodedState) {
+        probePhase = ProbePhase.NONE
+        val state = _ui.value
+        val baseline = state.probeBaseline ?: return
+        val step = EqProbe.plan().getOrNull(state.probeStep) ?: return
+        val bands = state.profile?.state?.fields
+            ?.firstOrNull { it.key == "customEq" }
+            ?.indices
+            ?: emptyList()
+        val result = EqProbe.compare(
+            before = Hex.decode(baseline),
+            after = Hex.decode(decoded.bodyHex),
+            bandOffsets = bands,
+        )
+        val finding = EqProbe.describe(step, result)
+        audit.add(AuditKind.RECEIVED, "Maskensuche: $finding", timestampMs = now())
+        _ui.update {
+            it.copyWith(
+                // Only a clean single-band answer advances the step. Anything else is
+                // worth repeating rather than building the next nine conclusions on.
+                probeStep = if (result is ProbeResult.Band) it.probeStep + 1 else it.probeStep,
+                probeFindings = it.probeFindings + finding,
+                audit = audit.snapshot(),
+            )
         }
     }
 
@@ -1467,6 +1589,9 @@ private fun UiState.copyWith(
     mediaVolume: Int? = this.mediaVolume,
     mediaVolumeMax: Int? = this.mediaVolumeMax,
     foreignChanges: List<ForeignChange> = this.foreignChanges,
+    probeStep: Int = this.probeStep,
+    probeBaseline: String? = this.probeBaseline,
+    probeFindings: List<String> = this.probeFindings,
     audit: List<AuditEntry> = this.audit,
     capture: CaptureReport? = this.capture,
     sdpBusy: Boolean = this.sdpBusy,
@@ -1501,6 +1626,9 @@ private fun UiState.copyWith(
     mediaVolume = mediaVolume,
     mediaVolumeMax = mediaVolumeMax,
     foreignChanges = foreignChanges,
+    probeStep = probeStep,
+    probeBaseline = probeBaseline,
+    probeFindings = probeFindings,
     audit = audit,
     capture = capture,
     sdpBusy = sdpBusy,

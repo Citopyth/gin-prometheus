@@ -42,6 +42,7 @@ class CommandBytesTest {
             "eqPreset" to "08 ee 00 00 00 02 88 0b 00 00 8b",
             "eqFlat" to "08 ee 00 00 00 02 88 10 00 fe ff ff 78 ff 0a 0d",
             "eqAllBands" to "08 ee 00 00 00 02 88 10 00 fe ff ff 78 ff 0a 0d",
+            "eqProbeBand" to "08 ee 00 00 00 02 88 10 00 fe 00 01 8c 00 0a 25",
             "lightOn" to "08 ee 00 00 00 0e 08 0b 00 00 17",
             "lightBrightness" to "08 ee 00 00 00 0e 05 0b 00 80 94",
             "lightMode" to "08 ee 00 00 00 0e 07 0b 00 00 16",

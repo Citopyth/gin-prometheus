@@ -351,9 +351,38 @@ unbekannt.
 - `eqPreset` geht nur noch von 0 bis 9.
 
 **Unbekannt bleibt** die Bit-Belegung der Band-Maske. Ohne sie gibt es keine
-Einzelband-Regelung, und Raten ist genau der Fehler oben. Herausfinden liesse sie sich
-mit kleinen Einzelversuchen bei milden Werten und einem Zustandsrahmen danach - das
-setzt aber voraus, dass `01 01` zuverlaessig antwortet, und das tut es noch nicht.
+Einzelband-Regelung, und Raten ist genau der Fehler oben.
+
+### Wie die Maske gefunden wird, ohne sie zu raten
+
+Die Methode steht in `EqProbe` und ist bewusst in Code gegossen statt in gute Vorsaetze
+- von Hand Hex zu tippen ist, wie `f0` entstanden ist:
+
+1. `eqFlat`, dann Zustand lesen. Das ist die Grundlinie: alle neun Baender auf `78`.
+2. `eqProbeBand` mit **genau einem** gesetzten Maskenbit. Die Verstaerkung ist als `8c`
+   (+2,0 dB) fest in die Nutzlastvorlage geschrieben und ist **kein Argument** - sie
+   kann nicht verstellt werden. Hoerbar im Zustandsrahmen, unhoerbar im Raum.
+3. Zustand lesen und byte-genau mit der Grundlinie vergleichen, nur an den neun
+   Band-Offsets aus dem Profil.
+4. Bewegt sich **genau ein** Band, bedeutet dieses Bit dieses Band. Bewegen sich
+   mehrere, ist es keine Einzelband-Maske - das wird als solches gemeldet und der
+   Schritt ruckt **nicht** vor. Bewegt sich keines, ist das Bit unbenutzt oder der
+   Befehl kam nicht an; was von beiden, sagt der Mitschnitt.
+5. Zurueck zu 1 fuer das naechste Bit. Neun Bits: acht im tiefen Byte, eines im hohen.
+
+Die Maskenbytes akzeptieren nur Einzelbits (`00 01 02 04 08 10 20 40 80` bzw. `00 01`),
+und zwar ueber `choices` im Profil - die Allowlist laesst also auch von Hand nichts
+anderes durch.
+
+**Voraussetzung:** `01 01` muss antworten. In mehreren Mitschnitten tat es das nicht,
+und ohne den Zustandsrahmen ist Schritt 3 blind. Deshalb sind es drei getrennte Knoepfe
+und kein Automatiklauf: ein Lauf, der nicht beim Scheitern stehenbleibt, erfindet
+Ergebnisse.
+
+**`eqProbeBand` ist nicht quittiert.** Diese Nutzlast hat die Box noch nie gesehen.
+Quittiert sind nur die Formen mit Maske `ff ff`, und diesen Anspruch auf eine andere
+Nutzlast zu uebertragen waere genau die geerbte Behauptung, gegen die dieses Profil
+gebaut ist.
 
 ## Handshake
 

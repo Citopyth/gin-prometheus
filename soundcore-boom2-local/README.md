@@ -98,9 +98,18 @@ Zustand, in dem die Box ab Werk war. Den hat niemand gelesen, bevor diese App da
 Mal geschrieben hat. Wenn der Klang nicht stimmt, ist die **Soundcore-App** der
 verlaessliche Weg - die kennt die Werte des Herstellers.
 
-**Einzelne Baender** kann die App nicht einstellen. Dafuer braeuchte es die
-Bit-Belegung der Band-Maske, und die ist unbekannt. Einmal geraten zu haben, hat
-gereicht.
+**Einzelne Baender** kann die App noch nicht einstellen - dafuer fehlt die Bit-Belegung
+der Band-Maske. Die laesst sich aber finden, und der Reiter *Klang* hat das Werkzeug
+dafuer: Grundlinie setzen, **ein** Maskenbit auf +2,0 dB, Zustand lesen, vergleichen.
+Die Verstaerkung ist dort fest verdrahtet und kein Regler, die Maske nimmt nur
+Einzelbits an, und drei getrennte Knoepfe statt eines Automatiklaufs zeigen, welcher
+Schritt scheitert - denn die Methode haengt daran, dass die Box `01:01` beantwortet, und
+das tut sie nicht immer. Die Regeln stehen in `EqProbe` und sind getestet; einmal
+geraten zu haben, hat gereicht.
+
+Was das bringt, wenn es klappt: tiefe Baender ein paar Dezibel zurueck, Mitten vor -
+dann greift der Schutz-Limiter spaeter und es wird lauter, ohne den Bass zu verlieren.
+Mehr Verstaerkerleistung kann auch kein Firmware-Update erfinden.
 
 ## Universelle Fernbedienung - der Teil, der wirklich universal ist
 

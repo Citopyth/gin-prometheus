@@ -28,6 +28,7 @@ import androidx.compose.ui.unit.dp
 import de.privat.boom2local.app.Boom2ViewModel
 import de.privat.boom2local.app.UiState
 import de.privat.boom2local.protocol.Decibels
+import de.privat.boom2local.protocol.EqProbe
 import de.privat.boom2local.protocol.SoundHistory
 import kotlin.math.roundToInt
 
@@ -202,11 +203,62 @@ fun SoundTab(state: UiState, model: Boom2ViewModel) {
                 Mono("Bytes ${bands.offsets.joinToString(",")}")
             }
             Note(
-                "Einzelne Baender zu setzen braucht die Bit-Belegung der Band-Maske, und " +
-                    "die kenne ich nicht. Geraten habe ich das schon einmal - das Ergebnis " +
-                    "war der ruinierte Klang. Herausfinden liesse sie sich mit kleinen, " +
-                    "umkehrbaren Einzelversuchen; sag Bescheid, wenn du das willst.",
+                "Einzelne Baender zu setzen braucht die Bit-Belegung der Band-Maske. " +
+                    "Geraten habe ich die schon einmal - das Ergebnis war der ruinierte " +
+                    "Klang. Herausfinden geht sicher, und zwar unten.",
             )
+        }
+
+        SectionCard(
+            "Band-Maske erforschen",
+            "Der letzte fehlende Baustein fuer einen echten 9-Band-Equalizer.",
+        ) {
+            val step = EqProbe.plan().getOrNull(state.probeStep)
+            if (step == null) {
+                Note("Alle ${EqProbe.STEPS} Schritte sind durch.")
+            } else {
+                Text(step.label, style = MaterialTheme.typography.titleMedium)
+            }
+            Note(
+                "Die Verstaerkung ist hier fest auf ${Decibels.format(
+                    Decibels.fromRaw(EqProbe.PROBE_RAW),
+                )} verdrahtet und kein Regler - an genau dieser Stelle ging einmal " +
+                    "${Decibels.format(Decibels.fromRaw(0xf0))} auf alle Baender. Die " +
+                    "Maske nimmt nur Einzelbits an, damit ein Schritt genau ein Band " +
+                    "bewegt.",
+            )
+            Note(
+                "Drei Knoepfe statt eines Durchlaufs, mit Absicht: das Ganze haengt " +
+                    "daran, dass die Box 01:01 beantwortet, und das tut sie nicht immer. " +
+                    "Ein Automatiklauf wuerde verstecken, welcher der drei Schritte " +
+                    "gescheitert ist.",
+            )
+            Button(onClick = { model.probeBaseline() }, enabled = canSend) {
+                Text("1. Neutral + Zustand lesen")
+            }
+            KeyValue(
+                "Grundlinie",
+                if (state.probeBaseline == null) "fehlt" else "steht",
+            )
+            Button(
+                onClick = { model.probeSend() },
+                enabled = canSend && state.probeBaseline != null && step != null,
+            ) {
+                Text("2. Schritt senden")
+            }
+            Button(
+                onClick = { model.probeCompare() },
+                enabled = canSend && state.probeBaseline != null,
+            ) {
+                Text("3. Lesen und vergleichen")
+            }
+            OutlinedButton(onClick = { model.probeReset() }) {
+                Text("Suche verwerfen")
+            }
+            if (state.probeFindings.isNotEmpty()) {
+                HorizontalDivider()
+                for (finding in state.probeFindings) Note("- $finding")
+            }
         }
     }
 }

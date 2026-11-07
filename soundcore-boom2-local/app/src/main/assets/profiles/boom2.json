@@ -329,6 +329,90 @@
       "note": "Der einzige Schreibbefehl mit beobachteter Wirkung - und zwar einer schlechten. Am 05.11.2026 ging er mit Verstaerkung f0 (=240, +12 dB auf allen Baendern) raus, wurde nach 31 ms quittiert, und der Klang war danach hoerbar ruiniert: so viel Pegel treibt den Verstaerker dauerhaft in den Limiter, und der nimmt zuerst den Bass. Deshalb jetzt 60..180 in Schritten von 10, also -6.0 bis +6.0 dB in ganzen Dezibel. Der Bereich der Box geht weiter; dieser hier nicht."
     },
     {
+      "key": "eqProbeBand",
+      "label": "Band-Maske erforschen (+2.0 dB auf ein Bit)",
+      "command": "02 88",
+      "kind": "WRITE",
+      "payloadTemplate": "fe ?? ?? 8c ?? 0a",
+      "arguments": [
+        {
+          "key": "maskHigh",
+          "label": "Maske hoch",
+          "payloadIndex": 1,
+          "min": 0,
+          "max": 1,
+          "default": 0,
+          "choices": [
+            {
+              "value": 0,
+              "label": "00"
+            },
+            {
+              "value": 1,
+              "label": "01"
+            }
+          ]
+        },
+        {
+          "key": "maskLow",
+          "label": "Maske tief",
+          "payloadIndex": 2,
+          "min": 0,
+          "max": 128,
+          "default": 1,
+          "choices": [
+            {
+              "value": 0,
+              "label": "00"
+            },
+            {
+              "value": 1,
+              "label": "01"
+            },
+            {
+              "value": 2,
+              "label": "02"
+            },
+            {
+              "value": 4,
+              "label": "04"
+            },
+            {
+              "value": 8,
+              "label": "08"
+            },
+            {
+              "value": 16,
+              "label": "10"
+            },
+            {
+              "value": 32,
+              "label": "20"
+            },
+            {
+              "value": 64,
+              "label": "40"
+            },
+            {
+              "value": 128,
+              "label": "80"
+            }
+          ]
+        },
+        {
+          "key": "band",
+          "label": "Band-Index",
+          "payloadIndex": 4,
+          "min": 0,
+          "max": 8,
+          "default": 0
+        }
+      ],
+      "acknowledged": false,
+      "verified": false,
+      "note": "Forschungsbefehl, nur fuer die Suche nach der Bit-Belegung der Band-Maske. NICHT quittiert: diese Nutzlast hat die Box noch nie gesehen. Quittiert sind nur die Formen mit Maske ff ff. Die Verstaerkung ist als 8c (=140, +2.0 dB) fest in die Vorlage geschrieben und ist absichtlich KEIN Argument - genau an dieser Stelle ging am 05.11.2026 f0 (+12.0 dB) auf alle Baender und hat den Klang ruiniert. Die Maskenbytes nehmen nur Einzelbits an, damit ein Schritt genau ein Band bewegt. Jeder Schritt gehoert zwischen zwei eqFlat. Siehe EqProbe."
+    },
+    {
       "key": "lightOn",
       "label": "Licht an/aus",
       "command": "0e 08",
