@@ -19,6 +19,7 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -224,6 +225,10 @@ fun SoundTab(state: UiState, model: Boom2ViewModel) {
  */
 @Composable
 fun RemoteTab(state: UiState, model: Boom2ViewModel) {
+    // The volume can be changed from anywhere - the hardware keys, another app - so it
+    // is read when this screen appears rather than trusted from whenever it was last set.
+    LaunchedEffect(Unit) { model.refreshMediaVolume() }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -254,11 +259,29 @@ fun RemoteTab(state: UiState, model: Boom2ViewModel) {
             val max = state.mediaVolumeMax
             if (volume != null && max != null && max > 0) {
                 KeyValue("Medien-Lautstaerke", "$volume von $max")
+                // The reason this slider exists: a capture of real use held 65 lines of
+                // "lauter" and "leiser" in bursts of fifteen to seventeen, 124 ms apart.
+                // One tap is one step, and the scale has that many steps, so running it
+                // end to end meant drumming on a button. Dragging does it in one move,
+                // and costs one log line instead of seventeen.
+                var pending by remember(volume) { mutableIntStateOf(volume) }
+                Text(
+                    "$pending von $max",
+                    style = MaterialTheme.typography.titleMedium,
+                )
+                Slider(
+                    value = pending.toFloat(),
+                    onValueChange = { pending = it.roundToInt().coerceIn(0, max) },
+                    onValueChangeFinished = { model.setMediaVolume(pending) },
+                    valueRange = 0f..max.toFloat(),
+                    steps = if (max > 1) max - 1 else 0,
+                )
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(onClick = { model.mediaVolumeDown() }) { Text("Leiser") }
                 OutlinedButton(onClick = { model.mediaVolumeUp() }) { Text("Lauter") }
             }
+            Note("Die Knoepfe bewegen eine Stufe, der Regler springt direkt hin.")
             val live = state.live["volume"]
             if (live != null) {
                 HorizontalDivider()

@@ -928,6 +928,37 @@ class Boom2ViewModel(application: Application) : AndroidViewModel(application) {
     fun mediaVolumeUp() = changeVolume("lauter") { media.volumeUp() }
     fun mediaVolumeDown() = changeVolume("leiser") { media.volumeDown() }
 
+    /**
+     * Jumps straight to a volume.
+     *
+     * One log entry, not seventeen. A capture of real use was 65 lines of "lauter" and
+     * "leiser" in bursts of fifteen to seventeen, because the plus and minus buttons
+     * move one step each and that is how many steps there are. Dragging a slider has to
+     * cost one line at the end, or the log that is supposed to show what happened to the
+     * speaker fills up with someone adjusting the volume.
+     */
+    fun setMediaVolume(value: Int) {
+        if (!media.setVolume(value)) {
+            note(
+                "Android hat die Lautstaerke abgelehnt. Das passiert bei " +
+                    "eingeschaltetem \"Nicht stoeren\" und auf Geraeten mit fester " +
+                    "Lautstaerke; dafuer braeuchte die App Zugriff auf die " +
+                    "Benachrichtigungs-Richtlinie, und den hat sie nicht.",
+            )
+            refreshMediaVolume()
+            return
+        }
+        // Not called "now": that would shadow the clock this very call needs.
+        val reached = media.volume()
+        val max = media.volumeMax()
+        audit.add(
+            AuditKind.INFO,
+            "Medien-Lautstaerke auf $reached" + (max?.let { " von $it" } ?: ""),
+            timestampMs = now(),
+        )
+        refreshMediaVolume()
+    }
+
     private fun pressMedia(what: String, action: () -> Boolean) {
         if (!action()) {
             note("Medientaste konnte nicht gesendet werden.")

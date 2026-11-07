@@ -55,25 +55,43 @@ class MediaRemote(context: Context) {
     }
 
     /**
-     * Sets the media volume outright.
+     * Sets the media volume outright, and falls back to stepping if it has to.
      *
-     * Returns false when the system refused, which it may: on some versions changing
-     * the volume is blocked while Do Not Disturb is on unless the app holds policy
-     * access, and this app deliberately does not ask for that.
+     * A capture of real use showed why this exists: seventeen taps on "louder" inside
+     * two seconds, then sixteen on "quieter", then fifteen, then seventeen again -
+     * someone running the scale end to end one step at a time, because one tap is one
+     * step and Android has fifteen to seventeen of them.
+     *
+     * The direct route can fail. Some devices implement a fixed volume policy, and
+     * changing the volume while Do Not Disturb is on needs notification-policy access,
+     * which this app deliberately does not ask for. So if the direct call throws, this
+     * walks there with the same [adjustStreamVolume] the plus and minus buttons use -
+     * which the capture proves does work - and gives up rather than spin if the volume
+     * stops moving.
      */
     fun setVolume(value: Int): Boolean {
         val manager = audio ?: return false
         val max = volumeMax() ?: return false
-        return try {
-            manager.setStreamVolume(
-                AudioManager.STREAM_MUSIC,
-                value.coerceIn(0, max),
-                0,
-            )
-            true
+        val target = value.coerceIn(0, max)
+        try {
+            manager.setStreamVolume(AudioManager.STREAM_MUSIC, target, 0)
+            if (volume() == target) return true
         } catch (e: Exception) {
-            false
+            // Fall through to stepping.
         }
+        // At most one step per point on the scale, plus a little slack, so a volume
+        // that refuses to move ends the loop instead of hanging the tap.
+        var guard = max + 2
+        var current = volume() ?: return false
+        while (current != target && guard-- > 0) {
+            val direction =
+                if (current < target) AudioManager.ADJUST_RAISE else AudioManager.ADJUST_LOWER
+            if (!adjust(direction)) return false
+            val next = volume() ?: return false
+            if (next == current) return false
+            current = next
+        }
+        return current == target
     }
 
     /**

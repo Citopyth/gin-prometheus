@@ -118,6 +118,17 @@ Praezise gesagt: die Medientasten gehen an den Player, der auf dem Handy den Ton
 und die Box folgt. An die Box selbst wird dabei nichts geschickt. Genau deshalb braucht
 dieser Reiter keine einzige zusaetzliche Berechtigung.
 
+**Die Lautstaerke hat einen Schieberegler**, und zwar wegen eines Mitschnitts aus echter
+Benutzung: 65 Zeilen "lauter" und "leiser" in Schueben von 15 bis 17, im Abstand von
+124 Millisekunden. Ein Druck ist eine Stufe, und so viele Stufen hat die Skala - die
+Skala einmal durchzufahren hiess also, auf einem Knopf zu trommeln. Der Regler macht es
+in einer Bewegung und kostet eine Protokollzeile statt siebzehn. Die Plus/Minus-Knoepfe
+bleiben fuer die Feinarbeit.
+
+Wenn Android den direkten Sprung ablehnt - feste Lautstaerke, oder "Nicht stoeren" ohne
+Richtlinien-Zugriff, den die App nicht hat - laeuft der Regler mit genau den
+Einzelschritten dorthin, die die Knoepfe benutzen. Die funktionieren nachweislich.
+
 ## Nur ein Geraet soll die Box benutzen duerfen
 
 Das geht - aber nicht aus dieser App heraus, und das ist keine Bequemlichkeit, sondern
