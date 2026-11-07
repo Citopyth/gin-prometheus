@@ -271,7 +271,9 @@ fun RemoteTab(state: UiState, model: Boom2ViewModel) {
                 )
                 Slider(
                     value = pending.toFloat(),
-                    onValueChange = { pending = it.roundToInt().coerceIn(0, max) },
+                    onValueChange = { value ->
+                        pending = value.roundToInt().coerceIn(0, max)
+                    },
                     onValueChangeFinished = { model.setMediaVolume(pending) },
                     valueRange = 0f..max.toFloat(),
                     steps = if (max > 1) max - 1 else 0,

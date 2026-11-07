@@ -18,6 +18,7 @@ import de.privat.boom2local.protocol.CaptureReport
 import de.privat.boom2local.protocol.CaptureValidator
 import de.privat.boom2local.protocol.ChangeOrigin
 import de.privat.boom2local.protocol.Command
+import de.privat.boom2local.protocol.CommandKind
 import de.privat.boom2local.protocol.CommandPolicy
 import de.privat.boom2local.protocol.CommandSpec
 import de.privat.boom2local.protocol.ConnectionPlan

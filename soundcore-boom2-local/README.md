@@ -246,6 +246,33 @@ selbst ergaenzt, ist `de.privat.boom2local.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISS
 die legt AndroidX an, um app-eigene Broadcast-Empfaenger gegen Zugriff von aussen zu
 schuetzen. Sie gilt nur innerhalb dieser App und hat nichts mit Netzwerk zu tun.
 
+## Lokal pruefen, was lokal pruefbar ist
+
+Die Android- und Compose-Jars sind von der Entwicklungsmaschine dieses Projekts aus
+nicht erreichbar, also laesst sich die App-Schicht hier **nicht** kompilieren — jeder
+Verweis darauf gilt als unaufgeloest, hunderte Male. Der Protokoll-Kern dagegen baut und
+testet lokal vollstaendig:
+
+```
+cd protocol-verify && ./gradlew test
+```
+
+Fuer die App-Schicht gibt es `tools/kcheck.sh`. Es filtert die Android-Fehler **nicht**
+nach Stichwoertern — genau das hat einmal einen fehlenden `import CommandKind` bis in den
+CI durchgelassen, weil der Name ein alter war und durch ein Raster fiel, das nach neuen
+suchte. Stattdessen vergleicht es die ganze Fehlermenge mit der eines Commits, den der CI
+als gruen bewiesen hat:
+
+```
+tools/kcheck.sh baseline <gruener-commit>   # Grundlinie aufnehmen
+tools/kcheck.sh check                       # was der Arbeitsstand hinzugefuegt hat
+```
+
+Nennt eine Zeile etwas Eigenes aus diesem Projekt, ist es ein echter Fehler. Nennt sie
+ein Android- oder Compose-Symbol, das die Grundlinie noch nie gesehen hat, ist es
+Rauschen — kurz pruefen, ob das Symbol existiert und importiert ist. Der CI bleibt die
+einzige Stelle, an der dieser Code wirklich uebersetzt wird.
+
 ## Selbst bauen
 
 Voraussetzung: Android Studio (Ladybug oder neuer) oder ein Android SDK mit
