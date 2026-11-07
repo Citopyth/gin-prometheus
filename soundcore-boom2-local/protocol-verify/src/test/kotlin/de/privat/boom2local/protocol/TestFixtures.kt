@@ -99,6 +99,29 @@ object TestFixtures {
         """,
     )
 
+    /**
+     * The state body captured on 2026-11-07 while the speaker was charging and, as far
+     * as anyone can tell, not in pairing mode. Seven identical frames over 52 seconds.
+     *
+     * It is the frame that split the two pairing candidates: byte 67 had fallen back to
+     * 00 while byte 2 stayed at 01, with the battery up from 2/5 to 3/5 and the charging
+     * cable confirmed in. Byte 2 is charging; byte 67 is what is left.
+     */
+    fun boom2StateBodyCharging(): ByteArray = Hex.decode(
+        """
+        1f 03 01 00 01 01 02 30 33 2e 31 31 41 43 43 46
+        30 58 30 45 32 35 31 30 31 39 30 35 01 31 ff ff
+        ff 00 78 09 0a 28 02 0a 28 09 08 c8 00 00 28 09
+        02 28 00 0d 28 09 00 28 00 0b 28 09 00 00 00 00
+        4e 00 64 00 00 01 00 cd ff 01 02 ff ff ff 00 cd
+        ff 02 03 ff 1e 00 ff 8e 00 ff e2 00 03 04 00 14
+        ff 00 f7 ff ff 00 d8 ff ff ff 04 01 ff ff ff 05
+        06 ff 3a 00 ff fc 00 00 ff cc 00 14 ff 8a 00 ff
+        ff 00 d8 06 03 ff fc 00 ff 8e 00 00 ff cc 00 00
+        00 00
+        """,
+    )
+
     fun boom2StateBody(): ByteArray = Hex.decode(
         """
         1f 02 00 01 01 01 02 30 33 2e 31 31 41 43 43 46 

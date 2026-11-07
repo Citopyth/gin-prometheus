@@ -49,8 +49,17 @@ object PairingWatch {
      */
     const val POLL_MS = 10_000L
 
-    /** The state fields that flipped when the button was pressed. */
-    val CANDIDATE_KEYS = listOf("pairingOpen", "unknownFlag67")
+    /**
+     * The state field suspected of meaning "open for pairing".
+     *
+     * There were two. Bytes 2 and 67 both flipped in the frame read right after the
+     * button was pressed, and both were watched. Then a later session had byte 67 back
+     * at 00 while byte 2 stayed at 01, with the battery climbing and the charging cable
+     * confirmed in - byte 2 is charging, and watching it here would have raised the
+     * alarm every time the speaker was plugged in. Exactly the wolf this class was
+     * written not to cry.
+     */
+    val CANDIDATE_KEYS = listOf("pairingOpen")
 
     fun verdict(state: DecodedState?): PairingVerdict {
         if (state == null) return PairingVerdict.Unknown
@@ -71,8 +80,8 @@ object PairingWatch {
                 "nichts bekannt."
 
         PairingVerdict.Closed ->
-            "Beide verdaechtigen Bytes stehen auf 0. Wenn die Deutung stimmt, ist die " +
-                "Box gerade NICHT fuer neue Geraete offen."
+            "Byte 67 steht auf 0. Wenn die Deutung stimmt, ist die Box gerade NICHT " +
+                "fuer neue Geraete offen."
 
         is PairingVerdict.Open -> buildString {
             append("ACHTUNG: ")
@@ -96,10 +105,12 @@ object PairingWatch {
 
     /** The test that would turn the suspicion into a fact. */
     val TEST: List<String> = listOf(
-        "1. Verbinden, dann \"Status lesen\". Byte 2 und Byte 67 notieren.",
-        "2. Bluetooth-Taste an der Box druecken, bis sie in den Kopplungsmodus geht.",
-        "3. Nochmal \"Status lesen\". Welches der beiden Bytes auf 01 steht, ist es.",
-        "4. Kopplungsmodus beenden, nochmal lesen: es muss wieder auf 00 zurueckfallen.",
-        "Schritt 4 ist der wichtige - ein Byte, das auf 01 bleibt, war es nicht.",
+        "1. An einem zweiten Geraet (PC, Tablet) die Bluetooth-Suche oeffnen.",
+        "2. Bluetooth-Taste an der Box druecken. Die Box muss dort auftauchen, und " +
+            "Byte 67 muss auf 01 stehen (Status lesen).",
+        "3. Kopplungsmodus beenden oder abwarten. Die Box muss aus der Suche " +
+            "verschwinden, und Byte 67 muss wieder auf 00 zurueckfallen.",
+        "Schritt 3 ist der wichtige - ein Byte, das auf 01 bleibt, war es nicht. " +
+            "Byte 2 ist so schon ausgeschieden: es ist das Laden.",
     )
 }

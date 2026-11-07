@@ -92,8 +92,10 @@ class ProfileFileTest {
     fun `a field outside the state frame exists for a notification and nothing else`() {
         // Without this, "inStateFrame: false" would be a way to park a field nobody
         // ever reads, and the profile would quietly grow values the app cannot show.
+        // Possibly none: charging used to be the only one, until a state frame read
+        // while the cable was in showed where it lives. The rule still holds for any
+        // field that ends up out here.
         val outside = profile.state.fields.filter { !it.inStateFrame }
-        assertTrue(outside.isNotEmpty())
         for (field in outside) {
             assertTrue(
                 profile.state.notifications.any { it.field == field.key },

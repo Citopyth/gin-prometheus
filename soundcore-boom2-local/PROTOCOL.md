@@ -504,11 +504,31 @@ zwei voellig verschiedene Befunde.
 | 2 | `00` | `01` |
 | 67 | `00` | `01` |
 
-Beide waren in **jedem** frueheren Rahmen `00`. Byte 2 liegt im Block der
-Betriebszustaende, direkt neben Lautstaerke (0) und Akku (1), was fuer Byte 2 spricht.
-**Belegt ist nichts davon** - es ist eine einzige Beobachtung, und beide stehen deshalb
-als unbestaetigte Felder im Profil (`pairingOpen`, `unknownFlag67`). Eines als
-"Kopplungsmodus" zu benennen und das andere zu verschweigen waere geraten.
+Beide waren in **jedem** frueheren Rahmen `00`. Beide standen zunaechst als
+unbestaetigte Kandidaten im Profil, weil eines zu benennen und das andere zu
+verschweigen geraten gewesen waere.
+
+**Aufgeloest (2026-11-07, spaeter am Tag).** Sieben Rahmen ueber 52 Sekunden, waehrend
+die Box am Ladekabel hing (vom Nutzer bestaetigt) und der Akku von 2/5 auf 3/5 stieg:
+
+| Byte | Wert | Deutung |
+|---|---|---|
+| 2 | `01`, konstant | **Laden.** `00` in allen Rahmen mit fallendem Akku, `01` seit das Kabel steckt. Der Verdacht "Kopplungsmodus" ist **widerlegt**: das Byte blieb auf `01`, als der Kopplungsmodus laengst vorbei war. |
+| 67 | wieder `00` | **Einziger verbliebener Kandidat** fuer "Kopplungsmodus offen". Genau der Verlauf, den das Kennzeichen haben muss: `00` → `01` beim Tastendruck → `00` danach. |
+
+Byte 2 haengt jetzt am Feld `charging`, auf das auch die Meldung `01:04` zeigt. Fuer
+voll bestaetigt fehlt noch: Kabel ziehen, das Byte muss auf `00` fallen.
+
+**Eine Ueberschneidung bleibt:** das Profil fuehrt Byte 67 auch als Lichtmodus
+(`lightMode`), ebenfalls unbestaetigt und aus einem einzigen Mitschnitt. Hoechstens eine
+der beiden Deutungen stimmt - es sei denn, die Box schaltet beim Koppeln ihren
+Lichtmodus um. Beide Felder sagen das in ihrer Notiz. Entscheiden kann es nur ein
+zweites Geraet: es muss die Box in seiner Bluetooth-Suche sehen, solange Byte 67 auf
+`01` steht, und nicht mehr, sobald es auf `00` faellt.
+
+Die erste Fassung der Kopplungs-Wache beobachtete beide Bytes und haette deshalb bei
+jedem Einstecken des Ladekabels Alarm geschlagen. Genau dieser Fehlalarm ist in der
+Sitzung oben passiert.
 
 Der Test, der es entscheidet, steht in `PairingWatch.TEST`. Der wichtige Schritt ist der
 letzte: **ein Byte, das nach dem Beenden des Kopplungsmodus auf `01` stehenbleibt, war

@@ -118,19 +118,11 @@
       },
       {
         "key": "pairingOpen",
-        "label": "Kopplungsmodus? (Byte 2)",
-        "type": "BOOL",
-        "offset": 2,
-        "verified": false,
-        "note": "Verdacht aus EINER Beobachtung (07.11.2026). In dem Zustandsrahmen, der direkt nach einem Druck auf die Bluetooth-Taste der Box gelesen wurde, kippten genau zwei Bytes, die in allen frueheren Rahmen 00 waren: Byte 2 und Byte 67. Eines davon ist mit hoher Wahrscheinlichkeit 'Kopplungsmodus offen' - welches, ist offen. Byte 2 liegt im Block der Betriebszustaende, direkt neben Lautstaerke (0) und Akku (1), was fuer Byte 2 spricht. Belegt ist nichts davon: der Test steht in PairingWatch.TEST, und der entscheidende Schritt ist, dass der Wert nach dem Beenden des Kopplungsmodus wieder auf 00 zurueckfaellt."
-      },
-      {
-        "key": "unknownFlag67",
-        "label": "Unbekanntes Kennzeichen (Byte 67)",
+        "label": "Kopplungsmodus? (Byte 67)",
         "type": "BOOL",
         "offset": 67,
         "verified": false,
-        "note": "Der zweite Kandidat aus derselben Beobachtung - kippte zusammen mit Byte 2, als die Bluetooth-Taste gedrueckt wurde. Beide stehen hier, weil ich nicht weiss, welches es ist, und eines davon als 'Kopplungsmodus' zu benennen und das andere zu verschweigen waere geraten."
+        "note": "Einziger verbliebener Kandidat fuer 'Kopplungsmodus offen' (07.11.2026). Stand in allen Rahmen auf 00, kippte zusammen mit Byte 2 auf 01 in dem Rahmen direkt nach einem Druck auf die Bluetooth-Taste, und fiel danach wieder auf 00 - waehrend Byte 2 auf 01 blieb, weil Byte 2 das Laden ist. Das ist der Verlauf, den das Kennzeichen haben muss. Bestaetigt ist es erst, wenn ein zweites Geraet die Box in seiner Bluetooth-Suche sieht, waehrend Byte 67 auf 01 steht, und nicht mehr sieht, sobald es auf 00 faellt. Ueberschneidung: das Profil fuehrt Byte 67 auch als Lichtmodus (lightMode, ebenfalls unbestaetigt, aus einem einzigen Mitschnitt). Wenn die Box beim Koppeln das Licht umschaltet, waeren beide Lesarten dasselbe Ereignis."
       },
       {
         "key": "firmware",
@@ -174,7 +166,7 @@
         "type": "U8",
         "offset": 67,
         "verified": false,
-        "note": "Unbestaetigt, im Mitschnitt 0."
+        "note": "Unbestaetigt, im Mitschnitt 0. ACHTUNG Ueberschneidung (07.11.2026): dasselbe Byte 67 ist auch der einzige Kandidat fuer 'Kopplungsmodus offen' (Feld pairingOpen). Es kippte auf 01 direkt nach einem Druck auf die Bluetooth-Taste und fiel danach auf 00 zurueck. Beide Deutungen sind unbestaetigt, und hoechstens eine kann stimmen - es sei denn, die Box schaltet beim Koppeln ihren Lichtmodus um. Der Test mit einem zweiten Geraet entscheidet."
       },
       {
         "key": "lightBrightness",
@@ -194,11 +186,12 @@
       },
       {
         "key": "charging",
-        "label": "Laedt",
+        "label": "Laedt (Byte 2)",
         "type": "BOOL",
-        "inStateFrame": false,
+        "inStateFrame": true,
         "verified": false,
-        "note": "Nur als Meldung beobachtet, nie in einem Zustandsrahmen - deshalb ohne Offset."
+        "note": "Stark belegt, noch nicht bestaetigt (07.11.2026). Byte 2 stand auf 00 in allen Rahmen, waehrend der Akku fiel, und steht auf 01, seit die Box laedt: der Akku stieg von 2/5 auf 3/5, und der Nutzer hat bestaetigt, dass das Ladekabel steckt. Ueber sieben Rahmen und 52 Sekunden blieb es konstant auf 01. Bis 07.11. stand hier als Verdacht 'Kopplungsmodus' - dieser Verdacht ist WIDERLEGT: das Byte blieb auf 01, als der Kopplungsmodus laengst vorbei war. Was fuer volles Bestaetigt noch fehlt: Kabel ziehen, Status lesen, das Byte muss auf 00 fallen. Die Meldung 01:04 zeigt weiterhin auf dieses Feld.",
+        "offset": 2
       }
     ],
     "notifications": [

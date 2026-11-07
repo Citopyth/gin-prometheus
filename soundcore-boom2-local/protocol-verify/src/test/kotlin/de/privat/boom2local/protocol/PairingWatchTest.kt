@@ -32,8 +32,38 @@ class PairingWatchTest {
         // speaker's Bluetooth button was pressed. Both candidates flipped.
         val verdict = PairingWatch.verdict(decode(TestFixtures.boom2StateBodyPairing()))
         val open = verdict as PairingVerdict.Open
-        assertEquals(2, open.fields.size)
+        assertEquals(listOf("pairingOpen"), open.fields.map { it.key })
         assertTrue(!open.confirmed, "one observation is not a confirmation")
+    }
+
+    @Test
+    fun `a charging speaker does not raise the pairing alarm`() {
+        // The false alarm the first version raised. Byte 2 is charging, and watching it
+        // as a pairing flag set off the warning every time the speaker was plugged in.
+        val state = decode(TestFixtures.boom2StateBodyCharging())
+        assertEquals(PairingVerdict.Closed, PairingWatch.verdict(state))
+        assertEquals("an", state.field("charging")?.value)
+    }
+
+    @Test
+    fun `byte 2 is charging and nothing else claims it`() {
+        val owners = profile.state.fields.filter { it.inStateFrame && it.offset == 2 }
+        assertEquals(listOf("charging"), owners.map { it.key })
+        assertTrue(owners.single().note?.contains("WIDERLEGT") == true)
+    }
+
+    @Test
+    fun `the overlap on byte 67 is written down on both sides`() {
+        // Two unconfirmed readings claim the same byte. Neither may look surer than it is.
+        val claims = profile.state.fields.filter { it.inStateFrame && it.offset == 67 }
+        assertEquals(setOf("pairingOpen", "lightMode"), claims.map { it.key }.toSet())
+        for (field in claims) {
+            assertTrue(!field.verified, "${field.key} must stay unverified")
+            assertTrue(
+                field.note?.contains("Ueberschneidung") == true,
+                "${field.key} has to mention the other claim on its byte",
+            )
+        }
     }
 
     @Test
@@ -51,7 +81,7 @@ class PairingWatchTest {
     fun `a confirmed flag gets the plain instruction instead`() {
         val confirmed = PairingVerdict.Open(
             fields = listOf(
-                DecodedField("pairingOpen", "Kopplungsmodus", "an", "01", listOf(2), true),
+                DecodedField("pairingOpen", "Kopplungsmodus", "an", "01", listOf(67), true),
             ),
             confirmed = true,
         )
@@ -72,8 +102,8 @@ class PairingWatchTest {
     }
 
     @Test
-    fun `both candidates are carried, because which one it is is unknown`() {
-        assertEquals(listOf("pairingOpen", "unknownFlag67"), PairingWatch.CANDIDATE_KEYS)
+    fun `one candidate is left, and it does not claim to be confirmed`() {
+        assertEquals(listOf("pairingOpen"), PairingWatch.CANDIDATE_KEYS)
         for (key in PairingWatch.CANDIDATE_KEYS) {
             val field = profile.state.fields.single { it.key == key }
             assertTrue(!field.verified, "$key must not claim to be verified")
@@ -82,8 +112,7 @@ class PairingWatchTest {
                 "$key owes the reader the observation it rests on",
             )
         }
-        assertEquals(2, profile.state.fields.single { it.key == "pairingOpen" }.offset)
-        assertEquals(67, profile.state.fields.single { it.key == "unknownFlag67" }.offset)
+        assertEquals(67, profile.state.fields.single { it.key == "pairingOpen" }.offset)
     }
 
     @Test

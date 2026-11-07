@@ -75,7 +75,7 @@ class StateDecoderTest {
         val unconfirmed = state.fields.filterNot { it.verified }.map { it.key }.toSet()
         assertEquals(
             setOf(
-                "eqPreset", "eqGain", "pairingOpen", "unknownFlag67",
+                "eqPreset", "eqGain", "pairingOpen", "charging",
                 "lightMode", "lightBrightness", "lightOn",
             ),
             unconfirmed,
@@ -143,7 +143,32 @@ class StateDecoderTest {
         // Every field the state frame is supposed to carry. A field that only ever
         // arrives as a notification is not missing from this frame, it was never in it.
         assertEquals(profile.state.fields.count { it.inStateFrame }, state.problems.size)
-        assertTrue(profile.state.fields.any { !it.inStateFrame })
+    }
+
+    @Test
+    fun `a field marked outside the state frame is skipped, not reported missing`() {
+        // The shipped profile no longer has one, so the mechanism is checked on a copy.
+        val notInFrame = FieldSpec(
+            key = "elsewhere",
+            label = "Nur als Meldung",
+            type = FieldType.BOOL,
+            inStateFrame = false,
+            note = "kommt nur als Meldung",
+        )
+        val copy = profile.copy(
+            state = profile.state.copy(fields = profile.state.fields + notInFrame),
+        )
+        val state = StateDecoder.decode(
+            copy,
+            Frame(
+                header = PacketCodec.DEFAULT_INBOUND_HEADER,
+                command = copy.stateResponseCommand,
+                body = TestFixtures.boom2StateBodyCharging(),
+                direction = Direction.FROM_DEVICE,
+            ),
+        )
+        assertNull(state.field("elsewhere"))
+        assertTrue(state.problems.none { it.contains("elsewhere") }, state.problems.toString())
     }
 
     @Test
@@ -189,14 +214,15 @@ class StateDecoderTest {
         assertEquals("an", notification(Command(0x02, 0x04), 1)?.value)
         assertEquals("aus", notification(Command(0x02, 0x04), 0)?.value)
         // The exact bytes the real speaker sent when the cable went in, entry 30 of the
-        // capture: 09 ff 00 00 01 | 01 04 | 0b 00 | 01 | 1a. The field behind it has no
-        // place in any state frame, which must not stop the notification decoding.
+        // capture: 09 ff 00 00 01 | 01 04 | 0b 00 | 01 | 1a.
         assertEquals("an", notification(Command(0x01, 0x04), 1)?.value)
-        assertEquals("Laedt", notification(Command(0x01, 0x04), 1)?.label)
-        assertEquals(
-            false,
-            profile.state.fields.single { it.key == "charging" }.inStateFrame,
-        )
+        assertEquals("Laedt (Byte 2)", notification(Command(0x01, 0x04), 1)?.label)
+        // Since 2026-11-07 the field also has a place in the state frame: byte 2, read
+        // as 01 while the cable was confirmed in and the battery climbing.
+        val charging = profile.state.fields.single { it.key == "charging" }
+        assertEquals(true, charging.inStateFrame)
+        assertEquals(2, charging.offset)
+        assertEquals(false, charging.verified)
         // A command the profile does not describe is reported as unknown, not guessed.
         assertNull(notification(Command(0x7a, 0x7b), 1))
     }
