@@ -365,6 +365,42 @@ Falls deine Box Schreibzugriffe stillschweigend ignoriert, ist das der erste Ver
 ein Mitschnitt der Original-App direkt nach dem Verbinden zeigt die noetigen Schritte.
 Handshake-Schritte gehen durch dieselbe Policy wie alles andere.
 
+## Was den Steuerkanal vor fremden Geraeten schuetzt - und was nicht
+
+**Am Geraet bestaetigt (2026-11-06):** die Box nimmt den Steuerkanal **ohne
+Authentifizierung** an. Alle erfolgreichen Verbindungen der Mitschnitte liefen ueber
+`createInsecureRfcommSocketToServiceRecord`; Eintrag 172 eines Mitschnitts zeigt
+zusaetzlich eine erfolgreiche Verbindung **mit** Authentifizierung. Sie kann also beides
+und verlangt nichts.
+
+**Nicht geklaert:** ob ein **ungekoppeltes** Geraet den Kanal oeffnen kann. Das Handy in
+allen Mitschnitten war gekoppelt, also sagt "ohne Authentifizierung" hier nur, dass von
+*dieser* Seite nichts gefordert wurde - nicht, dass die Box den Bond nicht braucht. Das
+zu pruefen braeuchte ein zweites, nie gekoppeltes Geraet.
+
+**Was eine App auf dem Handy erreichen kann:**
+
+- **Den stark gesicherten Socket bevorzugen.** `SocketPlan` fragt zuerst nach
+  Authentifizierung und faellt nur zurueck, wenn sie abgelehnt wird. Das schuetzt *dieses
+  Handy* davor, mit einem Betrueger zu reden: wer die Adresse der Box faelscht, aber den
+  Kopplungsschluessel nicht hat, kommt durch den authentifizierten Handshake nicht. Es
+  schuetzt die Box nicht vor anderen Geraeten.
+- **Fremde Aenderungen bemerken.** Die Box meldet Lautstaerke (`01:09`), BassUp (`02:04`)
+  und Lichtzustand (`0e:09`) von sich aus. Zieht man davon ab, was die App selbst
+  geschickt hat, bleibt ein Protokoll mit Uhrzeit von allem anderen, was die Box
+  angefasst hat. `TamperWatch` macht genau das.
+
+**Was nicht geht, und zwar grundsaetzlich:** den Kanal fuer fremde Geraete sperren. Wer
+ihn oeffnen darf, entscheidet die Firmware der Box. Keine der Quellen Q1-Q6 beschreibt
+einen Befehl, der daran etwas aendert, und Code auf einem Handy kann es ohnehin nicht.
+Eine App, die das behauptet, erzeugt ein falsches Sicherheitsgefuehl - der gefaehrlichste
+Fehler von allen.
+
+**Was es wirklich erreicht:** Werksreset der Box, danach ausschliesslich ein Geraet
+koppeln, und die Kopplungstaste nicht mehr druecken. Dann steht in der Liste der Box ein
+Eintrag, und ein neues Geraet kommt nur hinein, wenn jemand physisch an der Box die
+Taste haelt.
+
 ## Firmware und OTA
 
 **Unbekannt.** Keine Quelle nennt einen Firmware- oder OTA-Befehl fuer irgendein

@@ -16,6 +16,7 @@ import de.privat.boom2local.protocol.AuditLog
 import de.privat.boom2local.protocol.BluetoothServices
 import de.privat.boom2local.protocol.CaptureReport
 import de.privat.boom2local.protocol.CaptureValidator
+import de.privat.boom2local.protocol.ChangeOrigin
 import de.privat.boom2local.protocol.Command
 import de.privat.boom2local.protocol.CommandPolicy
 import de.privat.boom2local.protocol.CommandSpec
@@ -25,6 +26,7 @@ import de.privat.boom2local.protocol.DecodedField
 import de.privat.boom2local.protocol.DecodedState
 import de.privat.boom2local.protocol.DeviceGate
 import de.privat.boom2local.protocol.DeviceProfile
+import de.privat.boom2local.protocol.ForeignChange
 import de.privat.boom2local.protocol.Frame
 import de.privat.boom2local.protocol.GateDecision
 import de.privat.boom2local.protocol.GattService
@@ -46,11 +48,13 @@ import de.privat.boom2local.protocol.ReconnectPolicy
 import de.privat.boom2local.protocol.SessionEvent
 import de.privat.boom2local.protocol.SessionMachine
 import de.privat.boom2local.protocol.SessionPhase
+import de.privat.boom2local.protocol.SecurityPreference
 import de.privat.boom2local.protocol.SessionState
 import de.privat.boom2local.protocol.SilenceAction
 import de.privat.boom2local.protocol.SilenceResponse
 import de.privat.boom2local.protocol.SoundHistory
 import de.privat.boom2local.protocol.SoundSetting
+import de.privat.boom2local.protocol.TamperWatch
 import de.privat.boom2local.protocol.TransportKind
 import de.privat.boom2local.protocol.TransportPreference
 import de.privat.boom2local.protocol.UndoPlan
@@ -98,6 +102,14 @@ class UiState(
     /** The phone's media volume, read when it is shown or changed. */
     val mediaVolume: Int? = null,
     val mediaVolumeMax: Int? = null,
+    /**
+     * Changes the speaker reported that this app did not cause.
+     *
+     * Not an attack log, and the UI says so: the buttons on the speaker land here, so
+     * does the phone's volume rocker, so does the speaker turning itself down. What it
+     * is, is a timestamped record of everything other than this app that touched it.
+     */
+    val foreignChanges: List<ForeignChange> = emptyList(),
     val audit: List<AuditEntry> = emptyList(),
     val capture: CaptureReport? = null,
     /** A fresh SDP query is running. */
@@ -188,6 +200,15 @@ class Boom2ViewModel(application: Application) : AndroidViewModel(application) {
 
     /** Set while a mute service is being dropped, so it cannot be dropped twice. */
     private var droppingMuteService = false
+
+    /**
+     * When this app last did something that could change what the speaker reports.
+     *
+     * Any write counts, and so does moving the phone's media volume, because that
+     * reaches the speaker through AVRCP and comes back as a volume report that looks
+     * exactly like someone else's doing. See [TamperWatch].
+     */
+    private var lastOwnChangeAtMs: Long? = null
 
     private val _ui = MutableStateFlow(UiState())
     val ui: StateFlow<UiState> = _ui.asStateFlow()
@@ -469,7 +490,12 @@ class Boom2ViewModel(application: Application) : AndroidViewModel(application) {
                     profile = profile,
                     audit = audit,
                     candidates = rfcommCandidates,
-                    insecureOverride = if (state.secureSocket) false else null,
+                    // Off no longer means "weak", it means "strongest that works".
+                    security = if (state.secureSocket) {
+                        SecurityPreference.FORCE_AUTHENTICATED
+                    } else {
+                        SecurityPreference.AUTO
+                    },
                     clock = ::now,
                 )
 
@@ -703,15 +729,41 @@ class Boom2ViewModel(application: Application) : AndroidViewModel(application) {
             }
 
             is Inbound.Notification -> {
+                val moment = now()
                 audit.add(
                     AuditKind.RECEIVED,
                     "${frame.command} meldet ${inbound.field.label}: ${inbound.field.value}",
                     hex = Hex.encode(frame.body),
-                    timestampMs = now(),
+                    timestampMs = moment,
                 )
+                // Blocking foreign access is impossible from a phone. Noticing it is
+                // not: the speaker announces these three on its own, so subtracting
+                // what this app asked for leaves everything else that touched it.
+                val origin = TamperWatch.classify(
+                    field = inbound.field,
+                    previous = _ui.value.live[inbound.field.key]?.value,
+                    lastOwnChangeAtMs = lastOwnChangeAtMs,
+                    nowMs = moment,
+                )
+                if (origin is ChangeOrigin.Foreign) {
+                    val change = origin.change
+                    audit.add(
+                        AuditKind.BLOCKED,
+                        "Fremde Aenderung: ${change.label} " +
+                            "${change.from ?: "?"} -> ${change.to} " +
+                            "(nicht von dieser App)",
+                        rule = "fremde Aenderung",
+                        timestampMs = moment,
+                    )
+                }
                 _ui.update {
                     it.copyWith(
                         live = it.live + (inbound.field.key to inbound.field),
+                        foreignChanges = if (origin is ChangeOrigin.Foreign) {
+                            TamperWatch.record(it.foreignChanges, origin.change)
+                        } else {
+                            it.foreignChanges
+                        },
                         audit = audit.snapshot(),
                     )
                 }
@@ -948,6 +1000,7 @@ class Boom2ViewModel(application: Application) : AndroidViewModel(application) {
             refreshMediaVolume()
             return
         }
+        lastOwnChangeAtMs = now()
         // Not called "now": that would shadow the clock this very call needs.
         val reached = media.volume()
         val max = media.volumeMax()
@@ -977,6 +1030,7 @@ class Boom2ViewModel(application: Application) : AndroidViewModel(application) {
             )
             return
         }
+        lastOwnChangeAtMs = now()
         audit.add(AuditKind.INFO, "Medien-Lautstaerke $what", timestampMs = now())
         refreshMediaVolume()
     }
@@ -1170,6 +1224,7 @@ class Boom2ViewModel(application: Application) : AndroidViewModel(application) {
         }
         viewModelScope.launch {
             try {
+                if (spec.kind == CommandKind.WRITE) lastOwnChangeAtMs = now()
                 transmit(active, spec.commandAddress, payload)
                 _ui.update {
                     it.copyWith(
@@ -1410,6 +1465,7 @@ private fun UiState.copyWith(
     soundHistory: List<SoundSetting> = this.soundHistory,
     mediaVolume: Int? = this.mediaVolume,
     mediaVolumeMax: Int? = this.mediaVolumeMax,
+    foreignChanges: List<ForeignChange> = this.foreignChanges,
     audit: List<AuditEntry> = this.audit,
     capture: CaptureReport? = this.capture,
     sdpBusy: Boolean = this.sdpBusy,
@@ -1443,6 +1499,7 @@ private fun UiState.copyWith(
     soundHistory = soundHistory,
     mediaVolume = mediaVolume,
     mediaVolumeMax = mediaVolumeMax,
+    foreignChanges = foreignChanges,
     audit = audit,
     capture = capture,
     sdpBusy = sdpBusy,

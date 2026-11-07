@@ -157,6 +157,33 @@ Umgekehrt ist es dicht: die App redet nur mit der Box, an die sie gebunden ist -
 MAC-Adresse, jedes andere Geraet wird abgelehnt. Das schuetzt die Box vor dieser App,
 nicht vor fremden Handys.
 
+### Zwei Dinge, die die App trotzdem tut
+
+**Sie nimmt jetzt den starken Socket.** Die Mitschnitte zeigen, dass die Box den
+Steuerkanal **ohne Authentifizierung** annimmt - und dass sie *mit* auch funktioniert.
+Sie verlangt also nichts und nimmt, was man ihr anbietet, und diese App hat ihr per
+Voreinstellung die schwache Variante angeboten, weil die zuerst funktionierte. Das war
+ein Fehler. `SocketPlan` fragt jetzt zuerst nach Authentifizierung und faellt nur
+zurueck, wenn sie abgelehnt wird. Was das bringt: wer die Adresse deiner Box faelscht,
+aber den Kopplungsschluessel nicht hat, kommt durch den authentifizierten Handshake
+nicht. Was es **nicht** bringt: es haelt kein anderes Geraet von deiner Box ab. Welche
+Variante zustande kam, steht in der Verbindungskarte und im Protokoll - die schwache wird
+rot markiert.
+
+**Sie merkt, wenn jemand anderes etwas verstellt.** Die Box meldet Lautstaerke, BassUp
+und Lichtzustand von sich aus, an echter Hardware belegt. Zieht man ab, was die App
+selbst geschickt hat, bleibt ein Protokoll mit Uhrzeit von allem anderen, was die Box
+angefasst hat. Das steht im Reiter **Sicherheit** unter *Wachmodus*.
+
+Eine fremde Aenderung ist dabei **kein Angriff**: die Tasten an der Box landen genauso
+dort, die Lautstaerke-Wippe des Handys auch, und die Box selbst, wenn sie sich
+herunterregelt. Die Liste sagt nur: das kam nicht von dieser App. Fuer drei fallende
+Lautstaerke-Meldungen hintereinander sagt sie es ausdruecklich - das ist die Box, die
+ihren Treiber schuetzt, und damit auch die Antwort auf "warum wird es von selbst leiser".
+
+**Verhindern kann sie nichts davon.** Das ist keine Bequemlichkeit, sondern die
+Architektur: der Steuerkanal ist ein Dienst der *Box*.
+
 ## Was die App nicht kann
 
 **Die Dienste *in* der Box kann man nicht abschalten.** Die Boom 2 laeuft mit

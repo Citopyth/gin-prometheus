@@ -51,7 +51,11 @@ import de.privat.boom2local.protocol.BluetoothServices
 import de.privat.boom2local.protocol.CommandKind
 import de.privat.boom2local.protocol.GattSelector
 import de.privat.boom2local.protocol.SessionPhase
+import de.privat.boom2local.protocol.TamperWatch
 import de.privat.boom2local.protocol.TransportPreference
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 private val TabTitles =
     listOf("Geraet", "Klang", "Fernbed.", "Steuern", "Protokoll", "Sicherheit")
@@ -544,6 +548,50 @@ private fun SecurityTab(state: UiState, model: Boom2ViewModel) {
         }
 
         SectionCard(
+            "Wachmodus: was ausser dieser App an der Box war",
+            "Verhindern kann die App nichts. Merken schon.",
+        ) {
+            Note(TamperWatch.describe(state.foreignChanges))
+            if (state.foreignChanges.isEmpty()) {
+                Note(
+                    "Die Box meldet Lautstaerke, BassUp und Licht von sich aus - das ist " +
+                        "an echter Hardware belegt. Alles, was sich daran aendert und " +
+                        "nicht von dieser App kam, landet hier mit Uhrzeit.",
+                )
+            } else {
+                for (change in state.foreignChanges.asReversed().take(20)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        Text(change.label, style = MaterialTheme.typography.bodyMedium)
+                        Text(
+                            "${change.from ?: "?"} -> ${change.to}",
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    }
+                    Mono(wallClock(change.atMs))
+                }
+            }
+            if (TamperWatch.looksLikeSelfProtection(state.foreignChanges)) {
+                Note(
+                    "Die Lautstaerke faellt dreimal hintereinander, ohne dass jemand " +
+                        "danach gefragt hat. Das ist die Box, die sich selbst " +
+                        "herunterregelt, um ihren Treiber zu schuetzen - typisch bei " +
+                        "BassUp und hoher Lautstaerke. Kein Defekt, sondern die " +
+                        "eingebaute Grenze.",
+                    warning = true,
+                )
+            }
+            Note(
+                "Wichtig: eine fremde Aenderung ist kein Angriff. Die Tasten an der Box " +
+                    "landen genauso hier, die Lautstaerke-Wippe deines Handys auch, und " +
+                    "die Box selbst, wenn sie sich schuetzt. Was die Liste sagt, ist nur: " +
+                    "das kam nicht von dieser App.",
+            )
+        }
+
+        SectionCard(
             "Nur mein Handy darf diese Box benutzen",
             "Was wirklich hilft - und was diese App dafuer nicht tun kann.",
         ) {
@@ -724,3 +772,7 @@ private fun SecurityTab(state: UiState, model: Boom2ViewModel) {
         }
     }
 }
+
+/** Wall clock for one timestamp, in the phone's own time zone. */
+private fun wallClock(millis: Long): String =
+    SimpleDateFormat("HH:mm:ss", Locale.GERMANY).format(Date(millis))

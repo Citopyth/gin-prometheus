@@ -10,6 +10,9 @@ import de.privat.boom2local.protocol.DeviceProfile
 import de.privat.boom2local.protocol.Frame
 import de.privat.boom2local.protocol.FrameSplitter
 import de.privat.boom2local.protocol.Hex
+import de.privat.boom2local.protocol.SecurityPreference
+import de.privat.boom2local.protocol.SocketPlan
+import de.privat.boom2local.protocol.SocketSecurity
 import de.privat.boom2local.protocol.SplitEvent
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -44,7 +47,7 @@ class RfcommTransport(
      * silent is exactly what that looks like from the outside, so it is worth being able
      * to try the other one without editing the profile.
      */
-    private val insecureOverride: Boolean? = null,
+    private val security: SecurityPreference = SecurityPreference.AUTO,
     private val clock: () -> Long = { System.currentTimeMillis() },
 ) : ControlTransport {
 
@@ -102,37 +105,52 @@ class RfcommTransport(
             streamEnded = false
             val rounds = profile.transport.connectAttempts.coerceAtLeast(1)
             var lastMessage: String? = null
+            // Strongest first. The order is decided in SocketPlan, where it is tested:
+            // the speaker takes both and demands neither, so asking for the
+            // authenticated link costs nothing, and the fallback is exactly what used
+            // to happen immediately.
+            val securities = SocketPlan.order(security, profile.transport.insecureSocket)
             for (round in 1..rounds) {
-                val insecure = insecureOverride ?: profile.transport.insecureSocket
                 for (candidate in candidates) {
-                    try {
-                        val created = if (insecure) {
-                            device.createInsecureRfcommSocketToServiceRecord(candidate.uuid)
-                        } else {
-                            device.createRfcommSocketToServiceRecord(candidate.uuid)
+                    for (level in securities) {
+                        try {
+                            val created = when (level) {
+                                SocketSecurity.OPEN ->
+                                    device.createInsecureRfcommSocketToServiceRecord(
+                                        candidate.uuid,
+                                    )
+
+                                SocketSecurity.AUTHENTICATED ->
+                                    device.createRfcommSocketToServiceRecord(candidate.uuid)
+                            }
+                            created.connect()
+                            socket = created
+                            readJob = scope.launch { readLoop(created) }
+                            val weak = SocketPlan.isWeak(level)
+                            audit.add(
+                                if (weak) AuditKind.BLOCKED else AuditKind.INFO,
+                                "RFCOMM verbunden mit ${candidate.uuid} (Runde $round " +
+                                    "von $rounds, ${SocketPlan.describe(level)})",
+                                rule = if (weak) "schwache Verbindung" else null,
+                                timestampMs = clock(),
+                            )
+                            return@withContext TransportTarget(
+                                label = candidate.uuid.toString(),
+                                serviceUuid = candidate.uuid.toString(),
+                                detail = "RFCOMM ${SocketPlan.describe(level)}, " +
+                                    candidate.origin,
+                            )
+                        } catch (e: Exception) {
+                            lastMessage = e.message ?: e.javaClass.simpleName
+                            val how =
+                                if (level == SocketSecurity.AUTHENTICATED) "mit" else "ohne"
+                            audit.add(
+                                AuditKind.ERROR,
+                                "Runde $round, ${candidate.uuid}, $how " +
+                                    "Authentifizierung: $lastMessage",
+                                timestampMs = clock(),
+                            )
                         }
-                        created.connect()
-                        socket = created
-                        readJob = scope.launch { readLoop(created) }
-                        audit.add(
-                            AuditKind.INFO,
-                            "RFCOMM verbunden mit ${candidate.uuid} (Runde $round von " +
-                                "$rounds, ${if (insecure) "ohne" else "mit"} Authentifizierung)",
-                            timestampMs = clock(),
-                        )
-                        return@withContext TransportTarget(
-                            label = candidate.uuid.toString(),
-                            serviceUuid = candidate.uuid.toString(),
-                            detail = "RFCOMM ${if (insecure) "ohne" else "mit"} " +
-                                "Authentifizierung, ${candidate.origin}",
-                        )
-                    } catch (e: Exception) {
-                        lastMessage = e.message ?: e.javaClass.simpleName
-                        audit.add(
-                            AuditKind.ERROR,
-                            "Runde $round, ${candidate.uuid}: $lastMessage",
-                            timestampMs = clock(),
-                        )
                     }
                 }
                 if (round < rounds) delay(500L * round)
