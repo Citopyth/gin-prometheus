@@ -2,9 +2,11 @@ package de.privat.boom2local.app.bt
 
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothSocket
+import de.privat.boom2local.protocol.AttemptFailure
 import de.privat.boom2local.protocol.AuditKind
 import de.privat.boom2local.protocol.AuditLog
 import de.privat.boom2local.protocol.Command
+import de.privat.boom2local.protocol.ConnectLog
 import de.privat.boom2local.protocol.DecodeResult
 import de.privat.boom2local.protocol.DeviceProfile
 import de.privat.boom2local.protocol.Frame
@@ -111,6 +113,11 @@ class RfcommTransport(
             // to happen immediately.
             val securities = SocketPlan.order(security, profile.transport.insecureSocket)
             for (round in 1..rounds) {
+                // Collected and summarised at the end of the round rather than written
+                // out one by one: when the speaker is off, every candidate fails the
+                // same way, and a capture of that is 34 identical lines burying
+                // everything else. See ConnectLog.
+                val roundFailures = mutableListOf<AttemptFailure>()
                 for (candidate in candidates) {
                     for (level in securities) {
                         try {
@@ -144,14 +151,15 @@ class RfcommTransport(
                             lastMessage = e.message ?: e.javaClass.simpleName
                             val how =
                                 if (level == SocketSecurity.AUTHENTICATED) "mit" else "ohne"
-                            audit.add(
-                                AuditKind.ERROR,
-                                "Runde $round, ${candidate.uuid}, $how " +
-                                    "Authentifizierung: $lastMessage",
-                                timestampMs = clock(),
+                            roundFailures += AttemptFailure(
+                                uuid = "${candidate.uuid}, $how Authentifizierung",
+                                message = lastMessage ?: "unbekannter Fehler",
                             )
                         }
                     }
+                }
+                for (line in ConnectLog.summarise(roundFailures)) {
+                    audit.add(AuditKind.ERROR, "Runde $round, $line", timestampMs = clock())
                 }
                 if (round < rounds) delay(500L * round)
             }

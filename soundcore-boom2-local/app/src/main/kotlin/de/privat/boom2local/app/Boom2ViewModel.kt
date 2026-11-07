@@ -1006,9 +1006,18 @@ class Boom2ViewModel(application: Application) : AndroidViewModel(application) {
             timestampMs = now(),
         )
         _ui.update { it.copyWith(probeBaseline = null) }
-        send(flat)
-        probePhase = ProbePhase.BASELINE
-        readState()
+        viewModelScope.launch {
+            // Ordered, with a wait. send() launches its own coroutine, so firing the
+            // flat write and the read one after the other guarantees nothing about
+            // which reaches the speaker first - and even in the right order the speaker
+            // needs time to apply the value before it will report it. A baseline read
+            // too early is answered from the state before the flat curve landed, and
+            // then every later comparison measures the wrong thing, silently.
+            send(flat)
+            delay(EqProbe.SETTLE_MS)
+            probePhase = ProbePhase.BASELINE
+            readState()
+        }
     }
 
     /** Step two: set exactly one mask bit to +2.0 dB. The gain is not ours to choose. */
@@ -1076,7 +1085,9 @@ class Boom2ViewModel(application: Application) : AndroidViewModel(application) {
             it.copyWith(
                 // Only a clean single-band answer advances the step. Anything else is
                 // worth repeating rather than building the next nine conclusions on.
-                probeStep = if (result is ProbeResult.One) it.probeStep + 1 else it.probeStep,
+                // Anything but an unusable comparison is an answer worth keeping and
+                // moving on from. "Several" is the normal case for a list.
+                probeStep = if (EqProbe.isConclusive(result)) it.probeStep + 1 else it.probeStep,
                 probeFindings = it.probeFindings + finding,
                 audit = audit.snapshot(),
             )

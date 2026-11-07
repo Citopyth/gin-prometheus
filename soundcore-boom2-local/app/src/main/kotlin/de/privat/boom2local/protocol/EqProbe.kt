@@ -62,10 +62,34 @@ object EqProbe {
     /**
      * Offsets that move on their own and would otherwise look like a result.
      *
-     * The battery is the one that bites: it ticks down during a session and would be
-     * reported as the byte the band selects.
+     * Offset 1 is the battery, which ticks down during a session. Offset 0 is the
+     * volume, which the phone's own rocker moves through AVRCP without this app or the
+     * speaker's own buttons being involved. Either would be reported as the byte the
+     * band byte selects, and a search that chases the battery finds nothing else.
      */
-    val DRIFTS = setOf(1)
+    val DRIFTS = setOf(0, 1)
+
+    /**
+     * How long to let the speaker settle between a write and the read that checks it.
+     *
+     * Acknowledgements in the captures came back in 28 to 205 ms, and applying a value
+     * takes at least that long again. Without this wait the baseline read can be
+     * answered from the state *before* the flat curve landed, and then every comparison
+     * afterwards is measuring the flat write rather than the probe - silently, with
+     * plausible-looking numbers. Half a second is cheap; a wrong baseline is not.
+     */
+    const val SETTLE_MS = 500L
+
+    /**
+     * Whether a result tells us enough to move to the next band value.
+     *
+     * Only an unusable comparison blocks. "Several bytes moved" is the *expected*
+     * outcome here, not a failure: the equaliser block is a list, so writing an entry
+     * shifts more than one byte, and an earlier version of this code treated that as a
+     * reason to stand still - it would have stuck on step one forever. "Nothing moved"
+     * is an answer too, and a recorded one.
+     */
+    fun isConclusive(result: ProbeResult): Boolean = result !is ProbeResult.Unusable
 
     init {
         require(PROBE_RAW in Decibels.SAFE_RAW_RANGE)

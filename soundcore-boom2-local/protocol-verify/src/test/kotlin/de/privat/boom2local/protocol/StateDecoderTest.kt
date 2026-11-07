@@ -79,6 +79,47 @@ class StateDecoderTest {
         )
     }
 
+    /** A state frame as the speaker would send it, for tests that build one by hand. */
+    private fun inbound(profile: DeviceProfile, body: ByteArray) = Frame(
+        header = PacketCodec.DEFAULT_INBOUND_HEADER,
+        command = profile.stateResponseCommand,
+        body = body,
+        direction = Direction.FROM_DEVICE,
+    )
+
+    @Test
+    fun `the EQ_BANDS type still decodes, though this profile no longer uses it`() {
+        // The Boom 2's equaliser turned out to be a list, so its profile dropped this
+        // type - but the type is a core capability, not a Boom 2 claim, and another
+        // model may well have fixed bands. Without a test it would quietly rot into
+        // something that throws the first time anyone needs it.
+        val spec = FieldSpec(
+            key = "bands",
+            label = "Baender",
+            type = FieldType.EQ_BANDS,
+            indices = listOf(2, 4, 6),
+            dbOffset = 120,
+            dbScale = 10.0,
+        )
+        val profile = TestFixtures.boom2Profile().let { base ->
+            base.copy(state = base.state.copy(fields = listOf(spec)))
+        }
+        val body = ByteArray(8).also {
+            it[2] = 120.toByte()
+            it[4] = 140.toByte()
+            it[6] = 100.toByte()
+        }
+        val frame = inbound(profile, body)
+        val decoded = assertNotNull(StateDecoder.decode(profile, frame).field("bands"))
+        assertEquals(listOf(2, 4, 6), decoded.offsets)
+        assertEquals("0.0 dB, 2.0 dB, -2.0 dB", decoded.value)
+
+        // And an index past the end is a reported problem, not a crash.
+        val short = StateDecoder.decode(profile, inbound(profile, ByteArray(3)))
+        assertTrue(short.problems.isNotEmpty())
+        assertNull(short.field("bands"))
+    }
+
     @Test
     fun `a short body is reported instead of crashing`() {
         val state = decode(ByteArray(20))

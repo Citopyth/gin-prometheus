@@ -106,6 +106,44 @@ class EqProbeTest {
     }
 
     @Test
+    fun `only an unusable comparison blocks the search`() {
+        // The bug this replaced would have stuck on step one forever. The equaliser
+        // block is a list, so writing an entry moves more than one byte, and "several"
+        // is therefore the expected answer - not a failure to stand still on.
+        val body = TestFixtures.boom2StateBodyAfterWrites()
+        val two = body.copyOf().also { it[34] = 0x8c.toByte(); it[35] = 0x00 }
+        assertTrue(EqProbe.isConclusive(EqProbe.compare(body, two)))
+        assertTrue(EqProbe.isConclusive(EqProbe.compare(body, body.copyOf())))
+        assertTrue(
+            EqProbe.isConclusive(
+                EqProbe.compare(body, body.copyOf().also { it[34] = 0x8c.toByte() }),
+            ),
+        )
+        assertTrue(!EqProbe.isConclusive(EqProbe.compare(body, ByteArray(3))))
+    }
+
+    @Test
+    fun `the volume and the battery are both excluded from the comparison`() {
+        // Both move without anyone asking - the battery by draining, the volume through
+        // the phone's rocker over AVRCP - and either would be reported as the byte the
+        // band value selects.
+        val before = TestFixtures.boom2StateBodyAfterWrites()
+        val after = before.copyOf()
+        after[0] = (before[0] + 3).toByte()
+        after[1] = (before[1] - 1).toByte()
+        assertEquals(ProbeResult.Nothing, EqProbe.compare(before, after))
+        assertEquals(setOf(0, 1), EqProbe.DRIFTS)
+    }
+
+    @Test
+    fun `the settle delay is long enough for the speaker to apply a value`() {
+        // Acknowledgements in the captures came back in 28 to 205 ms, and applying the
+        // value takes at least that again. A baseline read before the flat curve lands
+        // is answered from the wrong state, and nothing about the result looks wrong.
+        assertTrue(EqProbe.SETTLE_MS >= 2 * 205, "settle=${EqProbe.SETTLE_MS} ms")
+    }
+
+    @Test
     fun `the shipped profile carries the command the probe needs`() {
         val spec = profile.commands.single { it.key == EqProbe.COMMAND_KEY }
         assertEquals(CommandKind.WRITE, spec.kind)

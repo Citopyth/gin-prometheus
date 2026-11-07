@@ -205,7 +205,7 @@
         "field": "bassUp",
         "offset": 0,
         "verified": true,
-        "note": "Die Box meldet, wenn BassUp umgeschaltet wird - auch per Taste am Geraet."
+        "note": "Die Box meldet, wenn BassUp umgeschaltet wird - auch per Taste am Geraet. Nachtrag 07.11.2026: kommt offenbar nur bei Bedienung am Geraet. Vier Schreibbefehle 02 84 loesten keine einzige 02:04-Meldung aus."
       },
       {
         "command": "0e 09",
@@ -261,7 +261,7 @@
       ],
       "verified": false,
       "acknowledged": true,
-      "note": "Am Geraet bestaetigt: die Box quittiert 02 84 mit einem leeren Rahmen derselben Adresse (66 bzw. 205 ms). Sie kennt den Befehl also. Dass er BassUp schaltet, ist weiterhin vom Boom 3i uebernommen."
+      "note": "Am Geraet bestaetigt: die Box quittiert 02 84 mit einem leeren Rahmen derselben Adresse (66 bzw. 205 ms). Sie kennt den Befehl also. Dass er BassUp schaltet, ist weiterhin vom Boom 3i uebernommen. Am 07.11.2026 ergaenzt: 02 84 wurde viermal gesendet (00 und 01, je zweimal) und jedes Mal quittiert, aber die Box schickte danach KEINE 02:04-Meldung. Im Mitschnitt vom 05.11. kam 02:04 dagegen unaufgefordert, also offenbar nach einem Druck auf die Taste am Geraet. Die Box meldet diesen Zustand demnach nur bei Bedienung am Geraet, nicht bei Aenderung ueber das Protokoll - die Wirkung von 02 84 ist damit aus dem Protokoll allein nicht belegbar, sondern nur durch Hinhoeren."
     },
     {
       "key": "eqPreset",
