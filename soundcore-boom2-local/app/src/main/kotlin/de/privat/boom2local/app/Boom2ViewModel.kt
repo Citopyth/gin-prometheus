@@ -1013,7 +1013,13 @@ class Boom2ViewModel(application: Application) : AndroidViewModel(application) {
             // needs time to apply the value before it will report it. A baseline read
             // too early is answered from the state before the flat curve landed, and
             // then every later comparison measures the wrong thing, silently.
-            send(flat)
+            // Sent with an empty history: the flat curve IS the floor of the undo
+            // stack, so recording it as a step to undo would be recording "go back to
+            // where you already are". The probe steps after it push onto this, and
+            // Rueckgaengig then walks back to flat, which is coherent. Leaving the
+            // baseline out of the history entirely - the first version - left the undo
+            // button replaying probe writes with no flat underneath them.
+            send(flat, historyAfterSending = emptyList())
             delay(EqProbe.SETTLE_MS)
             probePhase = ProbePhase.BASELINE
             readState()
