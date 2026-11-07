@@ -50,6 +50,29 @@ object TestFixtures {
      * The frame it came in was 156 bytes with a length field reading 156 and a checksum
      * that verified, which is what confirmed the framing.
      */
+    /**
+     * The state body captured on 2026-11-07, the first one this project ever received.
+     *
+     * It differs from [boom2StateBody] in the equaliser block, and that difference is
+     * the evidence: the older capture holds nine `78 07 0a` entries from offset 34, this
+     * one holds a single `78 ff 0a` - byte for byte what the app's own eqFlat writes.
+     * The block is a list, not nine fixed offsets.
+     */
+    fun boom2StateBodyAfterWrites(): ByteArray = Hex.decode(
+        """
+        1f 02 00 00 01 01 02 30 33 2e 31 31 41 43 43 46
+        30 58 30 45 32 35 31 30 31 39 30 35 01 31 ff ff
+        ff 00 78 ff 0a 0d 00 00 00 00 00 00 00 00 00 00
+        00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+        4e 00 64 00 00 01 00 cd ff 01 02 ff ff ff 00 cd
+        ff 02 03 ff 1e 00 ff 8e 00 ff e2 00 03 04 00 14
+        ff 00 f7 ff ff 00 d8 ff ff ff 04 01 ff ff ff 05
+        06 ff 3a 00 ff fc 00 00 ff cc 00 14 ff 8a 00 ff
+        ff 00 d8 06 03 ff fc 00 ff 8e 00 00 ff cc 00 00
+        00 00
+        """,
+    )
+
     fun boom2StateBody(): ByteArray = Hex.decode(
         """
         1f 02 00 01 01 01 02 30 33 2e 31 31 41 43 43 46 

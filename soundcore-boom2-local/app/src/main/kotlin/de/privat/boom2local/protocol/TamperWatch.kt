@@ -7,6 +7,17 @@ data class ForeignChange(
     val from: String?,
     val to: String,
     val atMs: Long,
+    /**
+     * What the speaker last said its battery was, when this happened.
+     *
+     * Recorded because the question "does it sound the same at 20 percent as at 100"
+     * has no answer without it. A portable amplifier runs off a falling rail voltage,
+     * so its peak output falls with the charge and the protection limiter engages
+     * earlier; if the speaker also pulls its own volume setting down, it says so, and
+     * that report pinned to a battery level is the measurement. Nothing on a phone can
+     * change the physics - it can write down where the ceiling is.
+     */
+    val batteryAtChange: String? = null,
 )
 
 /** What a change the speaker reported turned out to be. */
@@ -79,6 +90,7 @@ object TamperWatch {
         previous: String?,
         lastOwnChangeAtMs: Long?,
         nowMs: Long,
+        battery: String? = null,
     ): ChangeOrigin = when {
         field.key !in WATCHED -> ChangeOrigin.Unchanged
         previous == field.value -> ChangeOrigin.Unchanged
@@ -91,6 +103,7 @@ object TamperWatch {
                 from = previous,
                 to = field.value,
                 atMs = nowMs,
+                batteryAtChange = battery,
             ),
         )
     }
@@ -124,6 +137,14 @@ object TamperWatch {
      * "why does it get quiet by itself" - and because the answer is "by design", which
      * is only convincing with the log to back it.
      */
+    /** The battery level the speaker last reported while turning itself down. */
+    fun batteryWhileProtecting(log: List<ForeignChange>): String? =
+        if (looksLikeSelfProtection(log)) {
+            log.last { it.field == "volume" }.batteryAtChange
+        } else {
+            null
+        }
+
     fun looksLikeSelfProtection(log: List<ForeignChange>): Boolean {
         val volumes = log.filter { it.field == "volume" }.takeLast(3)
         if (volumes.size < 3) return false

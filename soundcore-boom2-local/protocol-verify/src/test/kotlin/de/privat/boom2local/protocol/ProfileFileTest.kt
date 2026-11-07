@@ -30,7 +30,7 @@ class ProfileFileTest {
     @Test
     fun `only the fields confirmed against hardware claim to be verified`() {
         assertEquals(
-            setOf("volume", "batteryLevel", "bassUp", "firmware", "serial", "customEq"),
+            setOf("volume", "batteryLevel", "bassUp", "firmware", "serial"),
             profile.state.fields.filter { it.verified }.map { it.key }.toSet(),
         )
         // Every confirmed field has to say what confirmed it; "verified" without a
@@ -201,13 +201,23 @@ class ProfileFileTest {
     }
 
     @Test
-    fun `the eq band indices are ascending and evenly spaced`() {
-        val eq = profile.state.fields.first { it.key == "customEq" }
-        assertEquals(9, eq.indices.size)
-        assertEquals(34, eq.indices.first())
-        assertEquals(eq.indices.sorted(), eq.indices)
-        val steps = eq.indices.zipWithNext { a, b -> b - a }.toSet()
-        assertEquals(setOf(3), steps, "the profile documents a stride of 3")
+    fun `the profile no longer claims nine equaliser bands at fixed offsets`() {
+        // It did, with a stride of three from offset 34, and a test asserted it. The
+        // first state frame this project ever received disproved it: the block is a
+        // list of three-byte entries whose length depends on what was last written.
+        // Deleting the claim is the point; this test is what stops it coming back.
+        assertTrue(
+            profile.state.fields.none { it.type == FieldType.EQ_BANDS },
+            "the nine-band reading was disproven on 2026-11-07",
+        )
+        val gain = profile.state.fields.single { it.key == "eqGain" }
+        assertEquals(34, gain.offset)
+        assertEquals(FieldType.U8, gain.type)
+        assertTrue(!gain.verified)
+        assertTrue(
+            gain.note?.contains("WIDERLEGT") == true,
+            "a field that replaced a disproven one has to say so",
+        )
     }
 
     @Test

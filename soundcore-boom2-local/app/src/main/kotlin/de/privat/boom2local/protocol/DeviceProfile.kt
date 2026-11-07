@@ -492,6 +492,27 @@ data class ArgumentSpec(
         return p
     }
 
+    /**
+     * Why a value was refused, in the terms that actually apply to it.
+     *
+     * A real refusal from a capture read "'Verstaerkung' = 132 is outside 60..180",
+     * which is wrong twice over: 132 is inside that range, and the reason was the step
+     * grid. A message that misstates the rule teaches the reader the wrong rule, and
+     * they then try 131.
+     */
+    fun whyRefused(value: Int): String = when {
+        value !in min..max -> "'$label' = $value liegt nicht in $min..$max"
+        choices.isNotEmpty() -> "'$label' = $value ist keiner der erlaubten Werte " +
+            choices.joinToString(", ") { it.value.toString() }
+        step > 1 && (value - min) % step != 0 -> {
+            val nearest = min + ((value - min + step / 2) / step) * step
+            "'$label' = $value liegt zwar in $min..$max, aber nicht auf dem Raster " +
+                "von $step ab $min" +
+                if (nearest in min..max) " - naechster erlaubter Wert: $nearest" else ""
+        }
+        else -> "'$label' = $value ist nicht erlaubt"
+    }
+
     fun accepts(value: Int): Boolean = when {
         value !in min..max -> false
         choices.isNotEmpty() -> choices.any { it.value == value }

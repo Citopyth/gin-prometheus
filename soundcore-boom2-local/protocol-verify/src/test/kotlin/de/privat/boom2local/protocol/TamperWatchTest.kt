@@ -124,6 +124,36 @@ class TamperWatchTest {
     }
 
     @Test
+    fun `a foreign change carries the battery level it happened at`() {
+        // Without it there is no answering "does it sound the same at 20 percent as at
+        // 100": a portable amplifier's peak output falls with its rail voltage, so the
+        // limiter engages earlier as the charge drops. The log cannot change that. It
+        // can say where the ceiling was.
+        val origin = TamperWatch.classify(
+            field = field("volume", "22", label = "Lautstaerke"),
+            previous = "25",
+            lastOwnChangeAtMs = null,
+            nowMs = 5_000,
+            battery = "1/5 (ca. 20 %)",
+        )
+        assertEquals("1/5 (ca. 20 %)", (origin as ChangeOrigin.Foreign).change.batteryAtChange)
+    }
+
+    @Test
+    fun `self protection reports the charge it happened at, or nothing`() {
+        val falling = listOf("25" to "2/5", "22" to "2/5", "18" to "1/5")
+            .mapIndexed { i, (v, b) ->
+                ForeignChange("volume", "Lautstaerke", null, v, i.toLong(), b)
+            }
+        assertEquals("1/5", TamperWatch.batteryWhileProtecting(falling))
+        // And no claim at all when the pattern is not there.
+        val steady = listOf("18", "25", "20").mapIndexed { i, v ->
+            ForeignChange("volume", "Lautstaerke", null, v, i.toLong(), "3/5")
+        }
+        assertEquals(null, TamperWatch.batteryWhileProtecting(steady))
+    }
+
+    @Test
     fun `unparsable volumes are not guessed at`() {
         val log = listOf("laut", "mittel", "leise").mapIndexed { i, v ->
             ForeignChange("volume", "Lautstaerke", null, v, i.toLong())

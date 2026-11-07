@@ -40,12 +40,28 @@ class StateDecoderTest {
     }
 
     @Test
-    fun `all nine equaliser bands sit where the capture puts them`() {
-        val eq = assertNotNull(decode(TestFixtures.boom2StateBody()).field("customEq"))
-        assertEquals(9, eq.offsets.size)
-        assertEquals(listOf(34, 37, 40, 43, 46, 49, 52, 55, 58), eq.offsets)
-        // 0x78 is 120, which the Space 2's formula maps to exactly 0 dB.
-        assertEquals(List(9) { "0.0 dB" }.joinToString(", "), eq.value)
+    fun `the equaliser block is a list, and both captures show it`() {
+        // This test used to assert nine bands at offsets 34, 37, 40 and so on, all
+        // reading 0.0 dB. The first frame received from the speaker disproved that: the
+        // block is a run of three-byte entries - gain, band, 0x0a - and there were nine
+        // of them only because nine had been set.
+        val older = TestFixtures.boom2StateBody()
+        val newer = TestFixtures.boom2StateBodyAfterWrites()
+
+        // Nine entries in the older capture, every gain at 0 dB.
+        for (entry in 0 until 9) {
+            val at = 34 + entry * 3
+            assertEquals(0x78, older[at].toInt() and 0xFF, "gain of entry $entry")
+            assertEquals(0x0a, older[at + 2].toInt() and 0xFF, "terminator of entry $entry")
+        }
+        // One entry in the newer one, and it is byte for byte what eqFlat sends.
+        assertEquals(0x78, newer[34].toInt() and 0xFF)
+        assertEquals(0xff, newer[35].toInt() and 0xFF)
+        assertEquals(0x0a, newer[36].toInt() and 0xFF)
+        assertEquals(0x00, newer[38].toInt() and 0xFF)
+
+        // What the profile now reads there is one gain byte, and it says 0 dB.
+        assertEquals("0.0 dB", decode(newer).field("eqGain")?.value)
     }
 
     @Test
@@ -53,11 +69,14 @@ class StateDecoderTest {
         val state = decode(TestFixtures.boom2StateBody())
         val confirmed = state.fields.filter { it.verified }.map { it.key }.toSet()
         assertEquals(
-            setOf("volume", "batteryLevel", "bassUp", "firmware", "serial", "customEq"),
+            setOf("volume", "batteryLevel", "bassUp", "firmware", "serial"),
             confirmed,
         )
         val unconfirmed = state.fields.filterNot { it.verified }.map { it.key }.toSet()
-        assertEquals(setOf("eqPreset", "lightMode", "lightBrightness", "lightOn"), unconfirmed)
+        assertEquals(
+            setOf("eqPreset", "eqGain", "lightMode", "lightBrightness", "lightOn"),
+            unconfirmed,
+        )
     }
 
     @Test
@@ -69,7 +88,7 @@ class StateDecoderTest {
         assertEquals("0/5 (ca. 0 %)", state.field("batteryLevel")?.value)
         // ...and the ones that do not are absent rather than wrong.
         assertNull(state.field("lightOn"))
-        assertNull(state.field("customEq"))
+        assertNull(state.field("eqGain"))
         assertTrue(state.problems.any { it.contains("lightOn") }, state.problems.toString())
     }
 

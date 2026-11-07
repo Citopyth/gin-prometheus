@@ -765,6 +765,8 @@ class Boom2ViewModel(application: Application) : AndroidViewModel(application) {
                     previous = _ui.value.live[inbound.field.key]?.value,
                     lastOwnChangeAtMs = lastOwnChangeAtMs,
                     nowMs = moment,
+                    battery = _ui.value.live["batteryLevel"]?.value
+                        ?: _ui.value.deviceState?.field("batteryLevel")?.value,
                 )
                 if (origin is ChangeOrigin.Foreign) {
                     val change = origin.change
@@ -1025,11 +1027,7 @@ class Boom2ViewModel(application: Application) : AndroidViewModel(application) {
         applySound(
             commandKey = spec.key,
             label = step.label,
-            arguments = mapOf(
-                "maskHigh" to step.maskHigh,
-                "maskLow" to step.maskLow,
-                "band" to 0,
-            ),
+            arguments = mapOf("band" to step.band),
         )
     }
 
@@ -1065,14 +1063,12 @@ class Boom2ViewModel(application: Application) : AndroidViewModel(application) {
         val state = _ui.value
         val baseline = state.probeBaseline ?: return
         val step = EqProbe.plan().getOrNull(state.probeStep) ?: return
-        val bands = state.profile?.state?.fields
-            ?.firstOrNull { it.key == "customEq" }
-            ?.indices
-            ?: emptyList()
+        // The whole body. The profile's idea of where the bands live was disproven by
+        // the first real state frame, and a comparison that trusts it would report
+        // "nothing moved" nine times while the interesting bytes sat elsewhere.
         val result = EqProbe.compare(
             before = Hex.decode(baseline),
             after = Hex.decode(decoded.bodyHex),
-            bandOffsets = bands,
         )
         val finding = EqProbe.describe(step, result)
         audit.add(AuditKind.RECEIVED, "Maskensuche: $finding", timestampMs = now())
@@ -1080,7 +1076,7 @@ class Boom2ViewModel(application: Application) : AndroidViewModel(application) {
             it.copyWith(
                 // Only a clean single-band answer advances the step. Anything else is
                 // worth repeating rather than building the next nine conclusions on.
-                probeStep = if (result is ProbeResult.Band) it.probeStep + 1 else it.probeStep,
+                probeStep = if (result is ProbeResult.One) it.probeStep + 1 else it.probeStep,
                 probeFindings = it.probeFindings + finding,
                 audit = audit.snapshot(),
             )

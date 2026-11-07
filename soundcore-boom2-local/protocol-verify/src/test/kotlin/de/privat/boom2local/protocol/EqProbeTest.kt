@@ -7,124 +7,102 @@ import kotlin.test.assertTrue
 class EqProbeTest {
 
     private val profile = TestFixtures.boom2Profile()
-    private val bandOffsets = profile.state.fields.single { it.key == "customEq" }.indices
 
     @Test
     fun `the probe gain is fixed in the payload and cannot be an argument`() {
         // The whole reason this file exists. On 2026-11-05 the gain was an argument over
-        // 0..240, someone picked the top of it, and nine bands went to +12 dB.
+        // 0..240, someone picked the top of it, and the sound was ruined.
         val spec = profile.commands.single { it.key == EqProbe.COMMAND_KEY }
-        assertEquals("fe ?? ?? 8c ?? 0a", spec.payloadTemplate)
-        assertTrue(
-            spec.arguments.none { it.key == "gain" },
-            "the gain must not be settable on the probe command",
-        )
+        assertEquals("fe ff ff 8c ?? 0a", spec.payloadTemplate)
+        assertTrue(spec.arguments.none { it.key == "gain" })
+        assertEquals(listOf("band"), spec.arguments.map { it.key })
         assertEquals(0x8c, EqProbe.PROBE_RAW)
         assertEquals("+2.0 dB", Decibels.format(Decibels.fromRaw(EqProbe.PROBE_RAW)))
         assertTrue(EqProbe.PROBE_RAW in Decibels.SAFE_RAW_RANGE)
     }
 
     @Test
-    fun `the mask bytes take single bits only`() {
-        val spec = profile.commands.single { it.key == EqProbe.COMMAND_KEY }
-        val low = spec.arguments.single { it.key == "maskLow" }
-        val high = spec.arguments.single { it.key == "maskHigh" }
-        // Every allowed value is zero or one bit, so a step moves one band at most.
-        for (argument in listOf(low, high)) {
-            for (value in argument.allowedValues()) {
-                assertTrue(
-                    value == 0 || value.countOneBits() == 1,
-                    "${argument.key} allows $value, which is not a single bit",
-                )
-            }
-        }
-        // And the byte that caused the damage is not even in range here.
-        assertTrue(!low.accepts(0xff))
-        assertTrue(!low.accepts(0xf0))
-        assertTrue(!low.accepts(3))
-    }
-
-    @Test
-    fun `the plan walks nine bits, each exactly one`() {
-        val plan = EqProbe.plan()
-        assertEquals(EqProbe.STEPS, plan.size)
-        assertEquals((1..9).toList(), plan.map { it.number })
-        for (step in plan) {
-            val bits = step.maskHigh.countOneBits() + step.maskLow.countOneBits()
-            assertEquals(1, bits, "step ${step.number} sets $bits bits")
-        }
-        // No two steps set the same bit.
-        assertEquals(plan.size, plan.map { it.maskHigh to it.maskLow }.distinct().size)
-        assertEquals(0 to 1, plan.first().let { it.maskHigh to it.maskLow })
-        assertEquals(1 to 0, plan.last().let { it.maskHigh to it.maskLow })
-    }
-
-    @Test
     fun `every planned step is a value the profile will actually send`() {
-        // A plan the allowlist refuses is a plan that fails on the ninth step at the
-        // user's expense, so the two are checked against each other here.
-        val spec = profile.commands.single { it.key == EqProbe.COMMAND_KEY }
-        val low = spec.arguments.single { it.key == "maskLow" }
-        val high = spec.arguments.single { it.key == "maskHigh" }
+        val band = profile.commands
+            .single { it.key == EqProbe.COMMAND_KEY }
+            .arguments
+            .single { it.key == "band" }
+        assertEquals(EqProbe.STEPS, EqProbe.plan().size)
         for (step in EqProbe.plan()) {
-            assertTrue(low.accepts(step.maskLow), "maskLow ${step.maskLow} refused")
-            assertTrue(high.accepts(step.maskHigh), "maskHigh ${step.maskHigh} refused")
+            assertTrue(band.accepts(step.band), "band ${step.band} refused by the policy")
         }
+        assertEquals((0..8).toList(), EqProbe.plan().map { it.band })
     }
 
     @Test
-    fun `one moved band is read as that band`() {
+    fun `the two captures differ exactly where the equaliser list is`() {
+        // The finding that redesigned this whole search, asserted rather than described.
+        // Nine entries became one, and the one is what eqFlat sends.
         val before = TestFixtures.boom2StateBody()
-        val after = before.copyOf()
-        after[bandOffsets[3]] = EqProbe.PROBE_RAW.toByte()
-        val result = EqProbe.compare(before, after, bandOffsets)
-        val band = result as ProbeResult.Band
-        assertEquals(3, band.index)
-        assertEquals(bandOffsets[3], band.bodyOffset)
-        assertEquals(EqProbe.PROBE_RAW, band.raw)
-        assertTrue(EqProbe.describe(EqProbe.plan()[0], result).contains("Band 4"))
+        val after = TestFixtures.boom2StateBodyAfterWrites()
+        val result = EqProbe.compare(before, after)
+        val moved = (result as ProbeResult.Several).bytes.map { it.offset }
+        assertTrue(moved.isNotEmpty())
+        assertTrue(
+            moved.all { it in 3..60 },
+            "the difference should sit in the equaliser block, got $moved",
+        )
+        // The surviving entry is gain 0x78, band 0xff, terminator 0x0a.
+        assertEquals(0x78, after[34].toInt() and 0xFF)
+        assertEquals(0xff, after[35].toInt() and 0xFF)
+        assertEquals(0x0a, after[36].toInt() and 0xFF)
     }
 
     @Test
-    fun `several moved bands are not read as one`() {
-        // The mistake this guards: taking the first difference and calling it the band.
-        val before = TestFixtures.boom2StateBody()
+    fun `one moved byte is reported with where and what`() {
+        val before = TestFixtures.boom2StateBodyAfterWrites()
         val after = before.copyOf()
-        after[bandOffsets[1]] = EqProbe.PROBE_RAW.toByte()
-        after[bandOffsets[5]] = EqProbe.PROBE_RAW.toByte()
-        val result = EqProbe.compare(before, after, bandOffsets)
-        assertEquals(listOf(1, 5), (result as ProbeResult.Several).indices)
-        assertTrue(EqProbe.describe(EqProbe.plan()[0], result).contains("mehrere"))
+        after[34] = EqProbe.PROBE_RAW.toByte()
+        val one = EqProbe.compare(before, after) as ProbeResult.One
+        assertEquals(34, one.byte.offset)
+        assertEquals(0x78, one.byte.before)
+        assertEquals(EqProbe.PROBE_RAW, one.byte.after)
+        val text = EqProbe.describe(EqProbe.plan()[0], one)
+        assertTrue(text.contains("Byte 34"), text)
+        assertTrue(text.contains("Stelle dieses Bandes"), text)
+    }
+
+    @Test
+    fun `the battery ticking down is not mistaken for a result`() {
+        // It drifts on its own during a session, and reporting it would send the whole
+        // search chasing offset 1.
+        val before = TestFixtures.boom2StateBodyAfterWrites()
+        val after = before.copyOf()
+        after[1] = (before[1] - 1).toByte()
+        assertEquals(ProbeResult.Nothing, EqProbe.compare(before, after))
+        assertTrue(1 in EqProbe.DRIFTS)
     }
 
     @Test
     fun `nothing moving is its own answer, not a failure`() {
-        val before = TestFixtures.boom2StateBody()
-        assertEquals(ProbeResult.Nothing, EqProbe.compare(before, before.copyOf(), bandOffsets))
+        val before = TestFixtures.boom2StateBodyAfterWrites()
+        val result = EqProbe.compare(before, before.copyOf())
+        assertEquals(ProbeResult.Nothing, result)
+        assertTrue(EqProbe.describe(EqProbe.plan()[0], result).contains("kam nicht an"))
     }
 
     @Test
     fun `frames that cannot be compared say so instead of guessing`() {
-        val before = TestFixtures.boom2StateBody()
-        assertTrue(
-            EqProbe.compare(before, ByteArray(10), bandOffsets) is ProbeResult.Unusable,
-        )
-        assertTrue(
-            EqProbe.compare(ByteArray(4), ByteArray(4), bandOffsets) is ProbeResult.Unusable,
-        )
-        assertTrue(
-            EqProbe.compare(before, before.copyOf(), emptyList()) is ProbeResult.Unusable,
-        )
+        val body = TestFixtures.boom2StateBodyAfterWrites()
+        assertTrue(EqProbe.compare(body, ByteArray(10)) is ProbeResult.Unusable)
+        assertTrue(EqProbe.compare(ByteArray(0), body) is ProbeResult.Unusable)
+        assertTrue(EqProbe.compare(body, ByteArray(0)) is ProbeResult.Unusable)
     }
 
     @Test
-    fun `a change outside the bands is ignored`() {
-        // The battery or the volume moving between two reads must not look like a band.
-        val before = TestFixtures.boom2StateBody()
+    fun `the comparison does not depend on the profile's offsets`() {
+        // The bug this replaced: comparing only the nine offsets the profile named would
+        // have reported nothing nine times, because those offsets were wrong.
+        val before = TestFixtures.boom2StateBodyAfterWrites()
         val after = before.copyOf()
-        val notABand = (before.indices).first { it !in bandOffsets }
-        after[notABand] = (before[notABand] + 1).toByte()
-        assertEquals(ProbeResult.Nothing, EqProbe.compare(before, after, bandOffsets))
+        after[91] = (before[91] + 1).toByte()
+        val one = EqProbe.compare(before, after) as ProbeResult.One
+        assertEquals(91, one.byte.offset)
     }
 
     @Test
@@ -133,7 +111,7 @@ class EqProbeTest {
         assertEquals(CommandKind.WRITE, spec.kind)
         assertEquals("02 88", spec.command)
         assertTrue(!spec.verified)
-        assertTrue(spec.note?.contains("f0") == true, "the note must record why the gain is fixed")
-        assertEquals(9, bandOffsets.size)
+        assertTrue(!spec.acknowledged)
+        assertTrue(spec.note?.contains("f0") == true)
     }
 }

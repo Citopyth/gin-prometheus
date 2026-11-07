@@ -167,7 +167,7 @@ private fun CommandCard(
                 ?: argument.default
                 ?: argument.min
             Text(
-                "${argument.label}: $current",
+                "${argument.label}: ${argument.render(current)}",
                 style = MaterialTheme.typography.bodyMedium,
             )
             when {
@@ -185,13 +185,36 @@ private fun CommandCard(
                     }
                 }
 
-                argument.min < argument.max -> Slider(
-                    value = current.coerceIn(argument.min, argument.max).toFloat(),
-                    onValueChange = { raw ->
-                        model.setArgument(spec.key, argument.key, raw.roundToInt())
-                    },
-                    valueRange = argument.min.toFloat()..argument.max.toFloat(),
-                )
+                argument.min < argument.max -> {
+                    // Snapped to the argument's own grid. Without this the slider hands
+                    // the policy values it will refuse: a capture has five refusals in a
+                    // row for 132, 111, 125 and 115 on an argument that only accepts
+                    // multiples of ten.
+                    val steps = if (argument.step > 1) {
+                        ((argument.max - argument.min) / argument.step) - 1
+                    } else {
+                        0
+                    }
+                    Slider(
+                        value = current.coerceIn(argument.min, argument.max).toFloat(),
+                        onValueChange = { raw ->
+                            val snapped = if (argument.step > 1) {
+                                argument.min +
+                                    (((raw - argument.min) / argument.step).roundToInt() *
+                                        argument.step)
+                            } else {
+                                raw.roundToInt()
+                            }
+                            model.setArgument(
+                                spec.key,
+                                argument.key,
+                                snapped.coerceIn(argument.min, argument.max),
+                            )
+                        },
+                        valueRange = argument.min.toFloat()..argument.max.toFloat(),
+                        steps = if (steps > 0) steps else 0,
+                    )
+                }
 
                 else -> Note("Fester Wert ${argument.min}.")
             }

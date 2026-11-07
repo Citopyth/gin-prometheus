@@ -353,26 +353,59 @@ unbekannt.
 **Unbekannt bleibt** die Bit-Belegung der Band-Maske. Ohne sie gibt es keine
 Einzelband-Regelung, und Raten ist genau der Fehler oben.
 
-### Wie die Maske gefunden wird, ohne sie zu raten
+### Der EQ-Block ist eine Liste, keine neun festen Offsets
+
+**Widerlegt am Geraet (2026-11-07)**, vom ersten je empfangenen Zustandsrahmen. Hier
+stand bisher: neun Dreiergruppen ab `body[34]`, alle mit `0x78`. Das war aus einem
+Mitschnitt erschlossen, in dem zufaellig neun Gruppen drinstanden - und ein Test hat es
+behauptet, was es nicht wahrer machte.
+
+| | ab Offset 30 |
+|---|---|
+| **alter** Mitschnitt, vor allen Schreibversuchen | `ff ff ff 00` + **neun** Gruppen `78 07 0a`, `78 07 0a`, …, `78 06 0a`, `78 01 0a` |
+| **neuer** Mitschnitt, nach den Schreibversuchen | `ff ff ff 00` + **eine** Gruppe `78 ff 0a`, dann `0d`, dann Nullen |
+
+Die Nutzlast, die diese App schreibt, ist `fe ff ff 78 ff 0a`. Die eine verbliebene
+Gruppe ist also byteweise das, was `eqFlat` zuletzt gesendet hat - Verstaerkung `78`,
+Band `ff`, Ende `0a`.
+
+**Daraus folgt dreierlei.** Der Block ist eine **Liste** von Dreiergruppen
+(Verstaerkung, Band, `0a`), deren Laenge davon abhaengt, was zuletzt gesetzt wurde.
+Das zweite Byte jeder Gruppe ist das **Band-Byte** der Nutzlast - im alten Mitschnitt
+stand dort 07/07/07/07/07/07/07/06/01, ungedeutet. Und die Schreibversuche dieser App
+haben die neun Eintraege durch einen einzigen ersetzt; die Soundcore-App hat mit
+"Signature" die Voreinstellung wiederhergestellt, nicht diese Liste.
+
+**Die beiden Bytes nach `fe`** (`ff ff`) kamen unveraendert zurueck. Sie als "Maske" zu
+bezeichnen war eine Vermutung aus dem Boom-3i-Profil; belegt ist nur, dass sie konstant
+sind. Variiert wird deshalb das Band-Byte.
+
+**Ab Offset 70** liegt eine andere Struktur: Index-Paare (`01 02`, `02 03`, `03 04`,
+`04 01`, `05 06`, `06 03`) und moegliche 16-Bit-Werte mit Vorzeichen (`cd ff` = −51,
+`1e 00` = 30, `8e 00` = 142). Sieht nach Filterkoeffizienten aus. **Ungedeutet** - eine
+Hypothese aus einem einzigen Rahmen ist keine.
+
+### Wie das Band-Byte gefunden wird, ohne es zu raten
 
 Die Methode steht in `EqProbe` und ist bewusst in Code gegossen statt in gute Vorsaetze
 - von Hand Hex zu tippen ist, wie `f0` entstanden ist:
 
-1. `eqFlat`, dann Zustand lesen. Das ist die Grundlinie: alle neun Baender auf `78`.
-2. `eqProbeBand` mit **genau einem** gesetzten Maskenbit. Die Verstaerkung ist als `8c`
+1. `eqFlat`, dann Zustand lesen. Das ist die Grundlinie.
+2. `eqProbeBand` mit einem Band-Byte von 0 bis 8. Die Verstaerkung ist als `8c`
    (+2,0 dB) fest in die Nutzlastvorlage geschrieben und ist **kein Argument** - sie
    kann nicht verstellt werden. Hoerbar im Zustandsrahmen, unhoerbar im Raum.
-3. Zustand lesen und byte-genau mit der Grundlinie vergleichen, nur an den neun
-   Band-Offsets aus dem Profil.
-4. Bewegt sich **genau ein** Band, bedeutet dieses Bit dieses Band. Bewegen sich
-   mehrere, ist es keine Einzelband-Maske - das wird als solches gemeldet und der
-   Schritt ruckt **nicht** vor. Bewegt sich keines, ist das Bit unbenutzt oder der
-   Befehl kam nicht an; was von beiden, sagt der Mitschnitt.
-5. Zurueck zu 1 fuer das naechste Bit. Neun Bits: acht im tiefen Byte, eines im hohen.
+3. Zustand lesen und den **ganzen** Rahmen byte-genau mit der Grundlinie vergleichen -
+   nicht nur Offsets, an die das Profil glaubt. Genau dieser Fehler steckte im ersten
+   Entwurf: er haette neunmal "nichts bewegt" gemeldet, waehrend die interessanten
+   Bytes woanders lagen.
+4. Bewegt sich **genau ein** Byte, ist das die Stelle dieses Bandes. Bewegen sich
+   mehrere, ist das bei einer Liste normal (ein Eintrag kommt dazu) und wird vollstaendig
+   aufgezaehlt; der Schritt ruckt **nicht** vor. Bewegt sich keines, wird der Wert
+   ignoriert oder der Befehl kam nicht an; was von beiden, sagt der Mitschnitt.
+5. Zurueck zu 1 fuer das naechste Band-Byte.
 
-Die Maskenbytes akzeptieren nur Einzelbits (`00 01 02 04 08 10 20 40 80` bzw. `00 01`),
-und zwar ueber `choices` im Profil - die Allowlist laesst also auch von Hand nichts
-anderes durch.
+Offset 1 - der Akkustand - ist vom Vergleich ausgenommen. Er faellt waehrend einer
+Sitzung von selbst und wuerde sonst als Ergebnis gemeldet.
 
 **Voraussetzung:** `01 01` muss antworten. In mehreren Mitschnitten tat es das nicht,
 und ohne den Zustandsrahmen ist Schritt 3 blind. Deshalb sind es drei getrennte Knoepfe
@@ -393,6 +426,30 @@ gefahren hat (`01:01`, `05:01` mit `01`, mehrfach `05:81`, `18:85` mit `01`).
 Falls deine Box Schreibzugriffe stillschweigend ignoriert, ist das der erste Verdacht:
 ein Mitschnitt der Original-App direkt nach dem Verbinden zeigt die noetigen Schritte.
 Handshake-Schritte gehen durch dieselbe Policy wie alles andere.
+
+## Klang ueber die Akkuladung
+
+**Am Geraet beobachtet (2026-11-07):** die Sitzung, in der die Box nach Aussage des
+Nutzers "ordentlich Dampf" hergab, lief durchgehend bei Akkustand **2/5, dann 1/5** -
+also zwischen 20 und 40 Prozent. Das ist die *untere* Grenze, nicht die obere.
+
+**Physik, nicht Firmware:** ein tragbarer Verstaerker laeuft an einer Akkuspannung, die
+mit der Ladung faellt. Weniger Spannung heisst weniger Spitzenleistung, heisst der
+Schutz-Limiter greift frueher. Kein Protokollbefehl und kein Firmware-Update aendert
+daran etwas; mehr Watt entstehen nicht aus Software.
+
+**Was sich messen laesst:** wenn die Box ihre eigene Lautstaerke zuruecknimmt, meldet
+sie das ueber `01:09`. Jede fremde Aenderung traegt deshalb jetzt den Akkustand, den die
+Box zuletzt gemeldet hat (`ForeignChange.batteryAtChange`). Drei fallende
+Lautstaerke-Meldungen hintereinander werden als Selbstschutz benannt, zusammen mit dem
+Ladezustand dabei. Greift dagegen nur der Limiter **innerhalb** der DSP, taucht im
+Protokoll gar nichts auf - und genau dieser Unterschied ist die Antwort auf "warum wird
+es von selbst leiser".
+
+**Was gegen das Problem hilft:** den Klang so einstellen, dass der Limiter auch bei
+leerem Akku nicht greift. Dann klingt es bei 100 Prozent genauso wie bei 15 - weil nie
+mehr verlangt wird, als der schwaechste Moment hergibt. Das ist die einzige Form von
+"ueber die ganze Ladung konstant", die es auf dieser Hardware gibt.
 
 ## Was den Steuerkanal vor fremden Geraeten schuetzt - und was nicht
 

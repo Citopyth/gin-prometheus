@@ -570,7 +570,10 @@ private fun SecurityTab(state: UiState, model: Boom2ViewModel) {
                             style = MaterialTheme.typography.bodyMedium,
                         )
                     }
-                    Mono(wallClock(change.atMs))
+                    Mono(
+                        wallClock(change.atMs) +
+                            (change.batteryAtChange?.let { "  Akku $it" } ?: ""),
+                    )
                 }
             }
             if (TamperWatch.looksLikeSelfProtection(state.foreignChanges)) {
@@ -579,7 +582,11 @@ private fun SecurityTab(state: UiState, model: Boom2ViewModel) {
                         "danach gefragt hat. Das ist die Box, die sich selbst " +
                         "herunterregelt, um ihren Treiber zu schuetzen - typisch bei " +
                         "BassUp und hoher Lautstaerke. Kein Defekt, sondern die " +
-                        "eingebaute Grenze.",
+                        "eingebaute Grenze." +
+                        (
+                            TamperWatch.batteryWhileProtecting(state.foreignChanges)
+                                ?.let { " Akkustand dabei: $it." } ?: ""
+                            ),
                     warning = true,
                 )
             }

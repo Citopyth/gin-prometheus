@@ -187,10 +187,10 @@ fun SoundTab(state: UiState, model: Boom2ViewModel) {
             }
         }
 
-        val bands = state.deviceState?.field("customEq")
+        val bands = state.deviceState?.field("eqGain")
         SectionCard(
-            "Die neun Baender, wie die Box sie meldet",
-            "Nur Anzeige. Einzeln einstellen kann die App nicht, siehe unten.",
+            "Was die Box ueber ihren Equalizer meldet",
+            "Nur Anzeige.",
         ) {
             if (bands == null) {
                 Note(
@@ -203,9 +203,12 @@ fun SoundTab(state: UiState, model: Boom2ViewModel) {
                 Mono("Bytes ${bands.offsets.joinToString(",")}")
             }
             Note(
-                "Einzelne Baender zu setzen braucht die Bit-Belegung der Band-Maske. " +
-                    "Geraten habe ich die schon einmal - das Ergebnis war der ruinierte " +
-                    "Klang. Herausfinden geht sicher, und zwar unten.",
+                "Der erste je empfangene Zustandsrahmen hat gezeigt: ab Byte 34 steht " +
+                    "eine LISTE aus Dreiergruppen (Verstaerkung, Band, 0a), keine neun " +
+                    "festen Offsets. Ein aelterer Mitschnitt hatte neun solche Gruppen, " +
+                    "der neue genau eine - naemlich die, die diese App zuletzt " +
+                    "geschrieben hat. Was das Band-Byte auswaehlt, findet die Suche " +
+                    "unten heraus.",
             )
         }
 

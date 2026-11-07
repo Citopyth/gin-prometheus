@@ -67,15 +67,7 @@ class CommandPolicy(
                     "'${spec.label}' needs a value for '${arg.label}'",
                 )
             if (!arg.accepts(value)) {
-                return PolicyDecision.Denied(
-                    "argument-range",
-                    "'${arg.label}' = $value is outside ${arg.min}..${arg.max}" +
-                        if (arg.choices.isEmpty()) {
-                            ""
-                        } else {
-                            " or not one of ${arg.choices.joinToString { it.value.toString() }}"
-                        },
-                )
+                return PolicyDecision.Denied("argument-range", arg.whyRefused(value))
             }
         }
         for (key in arguments.keys) {

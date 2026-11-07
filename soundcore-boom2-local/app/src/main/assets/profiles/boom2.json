@@ -143,24 +143,14 @@
         "note": "Vermutung. Der alte Offset 35 ist widerlegt - er liegt innerhalb des EQ-Blocks. body[33] ist das Byte unmittelbar davor und war im Mitschnitt 0."
       },
       {
-        "key": "customEq",
-        "label": "EQ-Baender",
-        "type": "EQ_BANDS",
-        "indices": [
-          34,
-          37,
-          40,
-          43,
-          46,
-          49,
-          52,
-          55,
-          58
-        ],
+        "key": "eqGain",
+        "label": "EQ-Verstaerkung (zuletzt gesetzt)",
+        "type": "U8",
+        "offset": 34,
         "dbOffset": 120,
         "dbScale": 10.0,
-        "verified": true,
-        "note": "Am Geraet bestaetigt: neun Dreiergruppen ab body[34], im Mitschnitt alle mit 0x78 = 120 im ersten Byte. Der Abstand 3 stimmte, der Startpunkt lag zwei zu spaet, und es sind neun Baender, nicht acht. Dass 120 genau 0 dB entspricht, passt zur Formel 120 + dB*10 aus Quelle Q4, ist aber nur durch einen flachen EQ belegt - ein verstelltes Band wuerde es beweisen."
+        "verified": false,
+        "note": "WIDERLEGT am 07.11.2026, und zwar vom ersten je empfangenen Zustandsrahmen: hier stand frueher 'neun Dreiergruppen ab Offset 34, alle 0x78'. Der echte Rahmen hat bei 34 die 0x78, bei 37 aber 0x0d und ab 38 Nullen. Was bei 30..36 steht, ist 'ff ff ff 00 78 ff 0a' und damit fast genau die Nutzlast, die diese App schreibt (fe ff ff 78 ff 0a) - also offenbar ein Echo des zuletzt gesetzten Custom-EQ, nicht neun Baender. Offset 34 als dessen Verstaerkungsbyte ist plausibel und unbestaetigt. Die eigentliche Filterstruktur liegt vermutlich ab Offset 70: dort stehen Index-Paare und moegliche 16-Bit-Werte. Ungedeutet."
       },
       {
         "key": "lightMode",
@@ -330,78 +320,14 @@
     },
     {
       "key": "eqProbeBand",
-      "label": "Band-Maske erforschen (+2.0 dB auf ein Bit)",
+      "label": "Band-Byte erforschen (+2.0 dB)",
       "command": "02 88",
       "kind": "WRITE",
-      "payloadTemplate": "fe ?? ?? 8c ?? 0a",
+      "payloadTemplate": "fe ff ff 8c ?? 0a",
       "arguments": [
         {
-          "key": "maskHigh",
-          "label": "Maske hoch",
-          "payloadIndex": 1,
-          "min": 0,
-          "max": 1,
-          "default": 0,
-          "choices": [
-            {
-              "value": 0,
-              "label": "00"
-            },
-            {
-              "value": 1,
-              "label": "01"
-            }
-          ]
-        },
-        {
-          "key": "maskLow",
-          "label": "Maske tief",
-          "payloadIndex": 2,
-          "min": 0,
-          "max": 128,
-          "default": 1,
-          "choices": [
-            {
-              "value": 0,
-              "label": "00"
-            },
-            {
-              "value": 1,
-              "label": "01"
-            },
-            {
-              "value": 2,
-              "label": "02"
-            },
-            {
-              "value": 4,
-              "label": "04"
-            },
-            {
-              "value": 8,
-              "label": "08"
-            },
-            {
-              "value": 16,
-              "label": "10"
-            },
-            {
-              "value": 32,
-              "label": "20"
-            },
-            {
-              "value": 64,
-              "label": "40"
-            },
-            {
-              "value": 128,
-              "label": "80"
-            }
-          ]
-        },
-        {
           "key": "band",
-          "label": "Band-Index",
+          "label": "Band-Byte",
           "payloadIndex": 4,
           "min": 0,
           "max": 8,
@@ -410,7 +336,7 @@
       ],
       "acknowledged": false,
       "verified": false,
-      "note": "Forschungsbefehl, nur fuer die Suche nach der Bit-Belegung der Band-Maske. NICHT quittiert: diese Nutzlast hat die Box noch nie gesehen. Quittiert sind nur die Formen mit Maske ff ff. Die Verstaerkung ist als 8c (=140, +2.0 dB) fest in die Vorlage geschrieben und ist absichtlich KEIN Argument - genau an dieser Stelle ging am 05.11.2026 f0 (+12.0 dB) auf alle Baender und hat den Klang ruiniert. Die Maskenbytes nehmen nur Einzelbits an, damit ein Schritt genau ein Band bewegt. Jeder Schritt gehoert zwischen zwei eqFlat. Siehe EqProbe."
+      "note": "Forschungsbefehl. Die Verstaerkung ist als 8c (=140, +2.0 dB) fest in die Vorlage geschrieben und ist absichtlich KEIN Argument - genau an dieser Stelle ging am 05.11.2026 f0 (+12.0 dB) auf alles und hat den Klang ruiniert. Die beiden Bytes nach fe stehen fest auf ff ff, weil sie im einzigen erfassten Zustandsrahmen unveraendert so zurueckkamen; variiert wird nur das Band-Byte. NICHT quittiert: diese Nutzlast hat die Box noch nie gesehen. Siehe EqProbe."
     },
     {
       "key": "lightOn",
