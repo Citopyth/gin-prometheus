@@ -117,6 +117,22 @@
         "note": "Am Geraet bestaetigt: body[3] wechselte zwischen 0 und 1 im Gleichklang mit der Meldung 02:04. Zuvor stand im Profil Offset 29 - das war falsch."
       },
       {
+        "key": "pairingOpen",
+        "label": "Kopplungsmodus? (Byte 2)",
+        "type": "BOOL",
+        "offset": 2,
+        "verified": false,
+        "note": "Verdacht aus EINER Beobachtung (07.11.2026). In dem Zustandsrahmen, der direkt nach einem Druck auf die Bluetooth-Taste der Box gelesen wurde, kippten genau zwei Bytes, die in allen frueheren Rahmen 00 waren: Byte 2 und Byte 67. Eines davon ist mit hoher Wahrscheinlichkeit 'Kopplungsmodus offen' - welches, ist offen. Byte 2 liegt im Block der Betriebszustaende, direkt neben Lautstaerke (0) und Akku (1), was fuer Byte 2 spricht. Belegt ist nichts davon: der Test steht in PairingWatch.TEST, und der entscheidende Schritt ist, dass der Wert nach dem Beenden des Kopplungsmodus wieder auf 00 zurueckfaellt."
+      },
+      {
+        "key": "unknownFlag67",
+        "label": "Unbekanntes Kennzeichen (Byte 67)",
+        "type": "BOOL",
+        "offset": 67,
+        "verified": false,
+        "note": "Der zweite Kandidat aus derselben Beobachtung - kippte zusammen mit Byte 2, als die Bluetooth-Taste gedrueckt wurde. Beide stehen hier, weil ich nicht weiss, welches es ist, und eines davon als 'Kopplungsmodus' zu benennen und das andere zu verschweigen waere geraten."
+      },
+      {
         "key": "firmware",
         "label": "Firmware",
         "type": "ASCII",

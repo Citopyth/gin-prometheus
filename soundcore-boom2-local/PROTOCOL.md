@@ -487,6 +487,84 @@ koppeln, und die Kopplungstaste nicht mehr druecken. Dann steht in der Liste der
 Eintrag, und ein neues Geraet kommt nur hinein, wenn jemand physisch an der Box die
 Taste haelt.
 
+## Die Box gibt beim Kopplungsmodus zwei Bytes preis - und ihren Empfangspuffer
+
+**Am Geraet beobachtet (2026-11-07).** Ein Zustandsrahmen, gelesen direkt nachdem die
+Bluetooth-Taste der Box gedrueckt wurde. Pruefsumme `f8` stimmt, Laengenfeld 156 stimmt -
+die Box hat diese Bytes wirklich als einen Rahmen geschickt, hier ist nichts
+falsch zusammengefuegt.
+
+**Sechzehn Bytes unterscheiden sich** vom Rahmen 36 Minuten davor, und sie zerfallen in
+zwei voellig verschiedene Befunde.
+
+### Zwei Kennzeichen kippen
+
+| Byte | vorher | nachher |
+|---|---|---|
+| 2 | `00` | `01` |
+| 67 | `00` | `01` |
+
+Beide waren in **jedem** frueheren Rahmen `00`. Byte 2 liegt im Block der
+Betriebszustaende, direkt neben Lautstaerke (0) und Akku (1), was fuer Byte 2 spricht.
+**Belegt ist nichts davon** - es ist eine einzige Beobachtung, und beide stehen deshalb
+als unbestaetigte Felder im Profil (`pairingOpen`, `unknownFlag67`). Eines als
+"Kopplungsmodus" zu benennen und das andere zu verschweigen waere geraten.
+
+Der Test, der es entscheidet, steht in `PairingWatch.TEST`. Der wichtige Schritt ist der
+letzte: **ein Byte, das nach dem Beenden des Kopplungsmodus auf `01` stehenbleibt, war
+es nicht.**
+
+### Die Box gibt ihren Empfangspuffer heraus
+
+Bytes 38 bis 59, wo frueher Nullen standen:
+
+```
+0d 02 0a 00 0d | 08 ee 00 00 00 0b 02 0a 00 | 0d 08 ee 00 00 00 0b 01 0a 00
+```
+
+Darin stecken zwei **vollstaendige ausgehende Rahmen** - Header `08 ee 00 00 00`, Befehle
+`0b 02` und `0b 01`, Laenge `0a 00`. Das sind die Kopplungslisten-Abfragen, die *diese
+App* geschickt hat - aber **nicht in dieser Sitzung**: der Mitschnitt hat fuenf
+Eintraege und kein einziges `SENT` mit `0b`.
+
+Die Box gibt also Inhalt ihres **Empfangspuffers aus einer frueheren Sitzung** in ihre
+Zustandsantwort hinein, in einem Bereich, der zuvor als Nullen gelesen wurde. Das ist
+ein Firmware-Fehler der Box: ein nicht geloeschter Puffer, dessen Reste an jedes
+verbundene Geraet zurueckfliessen. Was dort landet, bestimmt nicht diese App.
+
+**Zwei Folgen.** Erstens: `0d` an Byte 37 ist damit vermutlich das Ende der EQ-Liste und
+alles danach ist Altlast, nicht Nutzdaten - die Deutung des EQ-Blocks von oben bleibt,
+wird aber durch dieses Byte begrenzt. Zweitens: ein Vergleich zweier Zustandsrahmen darf
+sich auf diesen Bereich nicht verlassen. `EqProbe` vergleicht den ganzen Rahmen und
+meldet jede Abweichung einzeln, was hier genau richtig ist - es haette diese sechzehn
+Bytes aufgelistet statt eine Erkenntnis daraus zu machen.
+
+**Nicht behebbar von hier.** Der Puffer liegt in der Box.
+
+## Kopplungsmodus abschalten geht nicht
+
+**Was nicht geht:** der Box das Kopplungssignal entziehen. Die Bluetooth-Taste macht die
+Box sichtbar, das ist ihre Aufgabe, und sie liegt in der Firmware. Um das zu unterbinden,
+muesste man ihr Funkmodul am Senden hindern oder die Taste abschalten - beides kann nur
+die Firmware. Keine der Quellen Q1-Q6 beschreibt einen Befehl dafuer.
+
+**Und warum hier nicht geraten wird:** die Kopplungs-Kategorie ist `0b`. Ein geratener
+Schreibbefehl darin trifft im besten Fall nichts und im schlechtesten die Kopplungsliste
+- und der Nutzer sperrt sein eigenes Handy aus. Lesebefehle (`00..7f`) sind harmlos und
+duerfen probiert werden; Schreibbefehle (`80..ff`) in dieser Kategorie nicht.
+
+**Was wirklich hilft:** die Taste nicht druecken. Das klingt banal, ist aber der
+Mechanismus - solange die Box in Benutzung ist, kommt ein neues Geraet nur hinein, wenn
+jemand physisch an der Box diese Taste haelt. Dazu Werksreset plus ausschliesslich ein
+gekoppeltes Geraet, und, falls die Box es anbietet, Multipoint in der Soundcore-App aus.
+
+**Was die App beitraegt:** `PairingWatch` liest den Zustand alle zehn Sekunden neu und
+warnt, wenn eines der beiden Kennzeichen auf `01` steht. Das verhindert nichts, aber es
+macht aus "jemand koennte sich einwaehlen, wenn ich nicht hinsehe" ein "mein Handy hat
+es mir gesagt". Die Warnung nennt sich ausdruecklich einen Verdacht, solange der Test
+oben nicht gelaufen ist - eine Warnung, die zu oft faelschlich schreit, wird bei der
+ersten echten ignoriert.
+
 ## Firmware und OTA
 
 **Unbekannt.** Keine Quelle nennt einen Firmware- oder OTA-Befehl fuer irgendein

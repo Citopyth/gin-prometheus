@@ -50,6 +50,8 @@ import de.privat.boom2local.app.UiState
 import de.privat.boom2local.protocol.BluetoothServices
 import de.privat.boom2local.protocol.CommandKind
 import de.privat.boom2local.protocol.GattSelector
+import de.privat.boom2local.protocol.PairingVerdict
+import de.privat.boom2local.protocol.PairingWatch
 import de.privat.boom2local.protocol.SessionPhase
 import de.privat.boom2local.protocol.TamperWatch
 import de.privat.boom2local.protocol.TransportPreference
@@ -602,6 +604,32 @@ private fun SecurityTab(state: UiState, model: Boom2ViewModel) {
             "Nur mein Handy darf diese Box benutzen",
             "Was wirklich hilft - und was diese App dafuer nicht tun kann.",
         ) {
+            // The one thing that can be done about the button: notice it. Put at the
+            // top of the card because it is the live state, not advice.
+            val verdict = PairingWatch.verdict(state.deviceState)
+            Note(
+                PairingWatch.describe(verdict),
+                warning = verdict is PairingVerdict.Open,
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Text(
+                    "Kopplungs-Wache (liest alle ${PairingWatch.POLL_MS / 1000} s)",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Switch(
+                    checked = state.pairingWatch,
+                    onCheckedChange = { model.setPairingWatch(it) },
+                )
+            }
+            Note(
+                "Welches der beiden Bytes es wirklich ist, entscheidet dieser Test - " +
+                    "eine Minute, und danach steht es fest statt vermutet:",
+            )
+            for (line in PairingWatch.TEST) Note(line)
+            HorizontalDivider()
             Note(
                 "Zuerst das Unangenehme: diese App kann es nicht erzwingen. Wen die Box " +
                     "annimmt, entscheidet ihre Firmware anhand ihrer eigenen " +

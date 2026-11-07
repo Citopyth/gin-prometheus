@@ -191,24 +191,27 @@ app/src/main/kotlin/de/privat/boom2local/app/ui/Common.kt | unresolved reference
 app/src/main/kotlin/de/privat/boom2local/app/ui/SoundTab.kt | annotation argument must be a compile-time constant.
 app/src/main/kotlin/de/privat/boom2local/app/ui/SoundTab.kt | cannot infer type for this parameter. Please specify it explicitly.
 app/src/main/kotlin/de/privat/boom2local/app/ui/SoundTab.kt | unresolved reference 'Arrangement'.
+app/src/main/kotlin/de/privat/boom2local/app/ui/SoundTab.kt | unresolved reference 'Box'.
 app/src/main/kotlin/de/privat/boom2local/app/ui/SoundTab.kt | unresolved reference 'Button'.
 app/src/main/kotlin/de/privat/boom2local/app/ui/SoundTab.kt | unresolved reference 'Column'.
 app/src/main/kotlin/de/privat/boom2local/app/ui/SoundTab.kt | unresolved reference 'ColumnScope'.
 app/src/main/kotlin/de/privat/boom2local/app/ui/SoundTab.kt | unresolved reference 'Composable'.
+app/src/main/kotlin/de/privat/boom2local/app/ui/SoundTab.kt | unresolved reference 'DropdownMenu'.
+app/src/main/kotlin/de/privat/boom2local/app/ui/SoundTab.kt | unresolved reference 'DropdownMenuItem'.
 app/src/main/kotlin/de/privat/boom2local/app/ui/SoundTab.kt | unresolved reference 'ExperimentalLayoutApi'.
-app/src/main/kotlin/de/privat/boom2local/app/ui/SoundTab.kt | unresolved reference 'FilterChip'.
-app/src/main/kotlin/de/privat/boom2local/app/ui/SoundTab.kt | unresolved reference 'FlowRow'.
 app/src/main/kotlin/de/privat/boom2local/app/ui/SoundTab.kt | unresolved reference 'HorizontalDivider'.
 app/src/main/kotlin/de/privat/boom2local/app/ui/SoundTab.kt | unresolved reference 'LaunchedEffect'.
 app/src/main/kotlin/de/privat/boom2local/app/ui/SoundTab.kt | unresolved reference 'MaterialTheme'.
 app/src/main/kotlin/de/privat/boom2local/app/ui/SoundTab.kt | unresolved reference 'Modifier'.
 app/src/main/kotlin/de/privat/boom2local/app/ui/SoundTab.kt | unresolved reference 'OutlinedButton'.
+app/src/main/kotlin/de/privat/boom2local/app/ui/SoundTab.kt | unresolved reference 'OutlinedTextField'.
 app/src/main/kotlin/de/privat/boom2local/app/ui/SoundTab.kt | unresolved reference 'Row'.
 app/src/main/kotlin/de/privat/boom2local/app/ui/SoundTab.kt | unresolved reference 'Slider'.
 app/src/main/kotlin/de/privat/boom2local/app/ui/SoundTab.kt | unresolved reference 'Text'.
 app/src/main/kotlin/de/privat/boom2local/app/ui/SoundTab.kt | unresolved reference 'androidx'.
 app/src/main/kotlin/de/privat/boom2local/app/ui/SoundTab.kt | unresolved reference 'dp'.
 app/src/main/kotlin/de/privat/boom2local/app/ui/SoundTab.kt | unresolved reference 'mutableIntStateOf'.
+app/src/main/kotlin/de/privat/boom2local/app/ui/SoundTab.kt | unresolved reference 'mutableStateOf'.
 app/src/main/kotlin/de/privat/boom2local/app/ui/SoundTab.kt | unresolved reference 'remember'.
 app/src/main/kotlin/de/privat/boom2local/app/ui/SoundTab.kt | unresolved reference 'rememberScrollState'.
 app/src/main/kotlin/de/privat/boom2local/app/ui/Tabs.kt | annotation argument must be a compile-time constant.

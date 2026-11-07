@@ -42,6 +42,7 @@ import de.privat.boom2local.protocol.LivenessPolicy
 import de.privat.boom2local.protocol.PacketCodec
 import de.privat.boom2local.protocol.PairedQuery
 import de.privat.boom2local.protocol.PairedReply
+import de.privat.boom2local.protocol.PairingWatch
 import de.privat.boom2local.protocol.PendingCommand
 import de.privat.boom2local.protocol.PendingCommands
 import de.privat.boom2local.protocol.PolicyDecision
@@ -126,6 +127,8 @@ class UiState(
     val presetNames: Map<Int, String> = emptyMap(),
     /** Where the "who else may use this speaker" question stands. */
     val pairedQuery: PairedQuery = PairedQuery(),
+    /** Re-read the state on a timer, to notice the speaker opening itself up. */
+    val pairingWatch: Boolean = true,
     val audit: List<AuditEntry> = emptyList(),
     val capture: CaptureReport? = null,
     /** A fresh SDP query is running. */
@@ -230,6 +233,9 @@ class Boom2ViewModel(application: Application) : AndroidViewModel(application) {
     private enum class ProbePhase { NONE, BASELINE, COMPARE }
 
     private var probePhase = ProbePhase.NONE
+
+    /** When the pairing watch last asked for a state frame. */
+    private var lastPairingPollMs: Long = 0
 
     private val _ui = MutableStateFlow(UiState())
     val ui: StateFlow<UiState> = _ui.asStateFlow()
@@ -656,6 +662,7 @@ class Boom2ViewModel(application: Application) : AndroidViewModel(application) {
                 checkForSilence()
                 checkForLiveness()
                 _ui.update { it.copyWith(pairedQuery = it.pairedQuery.checked(now())) }
+                pollForPairingMode()
             }
         }
     }
@@ -1014,6 +1021,42 @@ class Boom2ViewModel(application: Application) : AndroidViewModel(application) {
 
     /** True when this frame is an answer to the pairing-list question. */
     private fun isPairedListAnswer(command: Command) = command.category == 0x0b
+
+    /**
+     * Re-reads the state so that the speaker opening itself up gets noticed.
+     *
+     * Pressing the speaker's Bluetooth button makes it discoverable to everything in
+     * range, and nothing on a phone can prevent that - the button is in its firmware
+     * and no source describes a command that disables it. Noticing within ten seconds
+     * is what is left, and it is not nothing: it turns "somebody might get in while I
+     * am not looking" into "my phone told me, and I pressed the button again".
+     *
+     * Suppressed while the band-byte search is running. That search consumes the next
+     * state frame as its baseline or its comparison, and a poll landing in between
+     * would feed it a frame from the wrong moment - the same silent corruption the
+     * settle delay was added to prevent, arriving from a different direction.
+     */
+    private fun pollForPairingMode() {
+        val state = _ui.value
+        if (!state.pairingWatch) return
+        if (state.session.phase != SessionPhase.CONNECTED) return
+        if (probePhase != ProbePhase.NONE) return
+        if (state.readOnly && state.profile == null) return
+        val moment = now()
+        if (moment - lastPairingPollMs < PairingWatch.POLL_MS) return
+        lastPairingPollMs = moment
+        readState()
+    }
+
+    fun setPairingWatch(value: Boolean) {
+        _ui.update { it.copyWith(pairingWatch = value) }
+        audit.add(
+            AuditKind.INFO,
+            "Kopplungs-Wache: ${if (value) "an" else "aus"}",
+            timestampMs = now(),
+        )
+        _ui.update { it.copyWith(audit = audit.snapshot()) }
+    }
 
     // --- band mask search -------------------------------------------------------------
 
@@ -1648,6 +1691,7 @@ private fun UiState.copyWith(
     probeFindings: List<String> = this.probeFindings,
     presetNames: Map<Int, String> = this.presetNames,
     pairedQuery: PairedQuery = this.pairedQuery,
+    pairingWatch: Boolean = this.pairingWatch,
     audit: List<AuditEntry> = this.audit,
     capture: CaptureReport? = this.capture,
     sdpBusy: Boolean = this.sdpBusy,
@@ -1687,6 +1731,7 @@ private fun UiState.copyWith(
     probeFindings = probeFindings,
     presetNames = presetNames,
     pairedQuery = pairedQuery,
+    pairingWatch = pairingWatch,
     audit = audit,
     capture = capture,
     sdpBusy = sdpBusy,

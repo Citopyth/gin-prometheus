@@ -74,7 +74,10 @@ class StateDecoderTest {
         )
         val unconfirmed = state.fields.filterNot { it.verified }.map { it.key }.toSet()
         assertEquals(
-            setOf("eqPreset", "eqGain", "lightMode", "lightBrightness", "lightOn"),
+            setOf(
+                "eqPreset", "eqGain", "pairingOpen", "unknownFlag67",
+                "lightMode", "lightBrightness", "lightOn",
+            ),
             unconfirmed,
         )
     }
