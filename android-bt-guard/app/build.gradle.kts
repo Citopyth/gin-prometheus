@@ -12,13 +12,14 @@ android {
         applicationId = "com.citopyth.btguard"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 2
+        versionName = "1.1"
     }
 
     signingConfigs {
         getByName("debug") {
-            // CI passes a persistent key, so every build installs as an update.
+            // CI passes a persistent key via this env var so builds install as
+            // updates; without it (local builds) Gradle's default debug key is used.
             System.getenv("BTGUARD_DEBUG_KEYSTORE")?.let { storeFile = file(it) }
         }
     }

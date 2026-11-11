@@ -51,13 +51,21 @@ und liest die aktuell verbundenen Audio-Geräte neu ein.
 
 ## Installieren
 
-1. Auf GitHub im Repo **Actions → „BT-Wächter APK“** öffnen, den neuesten
-   grünen Lauf wählen und unter **Artifacts** `bt-waechter-apk` laden.
-2. Die ZIP-Datei entpacken und `bt-waechter.apk` öffnen. Android fragt, ob
-   die Installation aus dieser Quelle erlaubt ist: einmal erlauben.
+1. Unter **Releases** die neueste Version öffnen und `bt-waechter.apk`
+   herunterladen (direkter Link, keine Anmeldung nötig). Alternativ den
+   letzten grünen Lauf unter **Actions → „BT-Wächter APK“** öffnen und das
+   Artifact `bt-waechter-apk` laden.
+2. Die APK öffnen. Android fragt, ob die Installation aus dieser Quelle
+   erlaubt ist: einmal erlauben.
 3. Beim ersten Start alle Berechtigungen erteilen.
 4. Im Tab **Schutz** bei „Überwachung im Hintergrund“ die App auf
    „Nicht eingeschränkt“ stellen, sonst kann Samsung die Überwachung pausieren.
+
+Builds werden mit einem in der CI zwischengespeicherten Signaturschlüssel
+signiert, damit neue Versionen sich als Update installieren und die Datenbank
+(Log & Geräteliste) behalten. Der Cache verfällt nach ~7 untätigen Tagen; für
+einen dauerhaften Schlüssel kann das Repo-Secret `BTGUARD_KEYSTORE_BASE64`
+gesetzt werden (siehe Workflow).
 
 ## Selbst bauen
 

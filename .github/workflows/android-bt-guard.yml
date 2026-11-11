@@ -2,13 +2,12 @@ name: BT-Wächter APK
 
 on:
   push:
-    paths:
-      - "android-bt-guard/**"
-      - ".github/workflows/android-bt-guard.yml"
+    branches: [claude/bt-waechter-app]
+    tags: ["v*"]
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
@@ -26,19 +25,30 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
 
-      # One signing key for all builds, so a new APK installs as an update
-      # instead of requiring the old app (and its log) to be removed first.
+      # Persist a signing key between builds so a new APK installs as an update
+      # and keeps the app's database. The cache lapses after ~7 idle days; set
+      # the repo secret BTGUARD_KEYSTORE_BASE64 to make the key truly permanent.
       - uses: actions/cache@v4
         with:
           path: ~/btguard-debug.keystore
           key: bt-waechter-debug-keystore-v2
 
-      - name: Create signing key on first run
+      - name: Prepare signing key
+        env:
+          KEYSTORE_B64: ${{ secrets.BTGUARD_KEYSTORE_BASE64 }}
         run: |
-          [ -f ~/btguard-debug.keystore ] || keytool -genkeypair -noprompt \
-            -keystore ~/btguard-debug.keystore -storepass android -keypass android \
-            -alias androiddebugkey -dname "CN=Android Debug,O=Android,C=US" \
-            -keyalg RSA -keysize 2048 -validity 10000
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "$KEYSTORE_B64" | base64 -d > "$HOME/btguard-debug.keystore"
+            echo "Signing key: from repo secret (permanent)."
+          elif [ -f "$HOME/btguard-debug.keystore" ]; then
+            echo "Signing key: restored from cache."
+          else
+            keytool -genkeypair -noprompt \
+              -keystore "$HOME/btguard-debug.keystore" -storepass android -keypass android \
+              -alias androiddebugkey -dname "CN=Android Debug,O=Android,C=US" \
+              -keyalg RSA -keysize 2048 -validity 10000
+            echo "Signing key: newly generated (no cache, no secret)."
+          fi
 
       - name: Build APK
         run: |
@@ -50,3 +60,23 @@ jobs:
         with:
           name: bt-waechter-apk
           path: android-bt-guard/bt-waechter.apk
+
+      # On a version tag (e.g. v1.1) publish a GitHub Release with the APK, so
+      # there is a permanent, no-login download link.
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cat > notes.md <<'NOTES'
+          **BT-Wächter** — überwacht Bluetooth-Verbindungen zu deinem Handy.
+
+          Lade **bt-waechter.apk** unten herunter, öffne sie und bestätige die
+          Installation aus dieser Quelle. Beim ersten Start alle Berechtigungen
+          erteilen; im Tab **Schutz** „Überwachung im Hintergrund" auf
+          „Nicht eingeschränkt" stellen.
+          NOTES
+          gh release create "${{ github.ref_name }}" bt-waechter.apk \
+            --repo "${{ github.repository }}" \
+            --title "BT-Wächter ${{ github.ref_name }}" \
+            --notes-file notes.md
