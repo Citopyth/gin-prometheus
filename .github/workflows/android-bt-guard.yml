@@ -76,7 +76,11 @@ jobs:
           erteilen; im Tab **Schutz** „Überwachung im Hintergrund" auf
           „Nicht eingeschränkt" stellen.
           NOTES
+          # Create the release if the tag push made it; if the release was
+          # drafted in the web UI first, just attach/replace the APK instead.
           gh release create "${{ github.ref_name }}" bt-waechter.apk \
             --repo "${{ github.repository }}" \
             --title "BT-Wächter ${{ github.ref_name }}" \
-            --notes-file notes.md
+            --notes-file notes.md \
+          || gh release upload "${{ github.ref_name }}" bt-waechter.apk \
+            --repo "${{ github.repository }}" --clobber
